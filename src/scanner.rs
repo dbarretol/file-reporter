@@ -4,22 +4,12 @@ use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::SystemTime;
 
 /// Convierte SystemTime a DateTime<Utc> de forma segura.
 fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
     Some(DateTime::<Utc>::from(t))
-}
-
-/// Comprueba si la extensión del archivo coincide con el filtro.
-fn matches_extension(path: &Path, filters: &[String]) -> bool {
-    if filters.is_empty() {
-        return true;
-    }
-    match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) => filters.iter().any(|f| f.eq_ignore_ascii_case(ext)),
-        None => false,
-    }
 }
 
 /// Construye recursivamente el árbol jerárquico.
@@ -48,8 +38,7 @@ pub fn build_tree(path: &Path, filters: &[String]) -> Result<Node> {
             .filter(|n| match n {
                 // Conservamos archivos que pasen el filtro
                 Node::File { extension, .. } => {
-                    filters.is_empty()
-                        || filters.iter().any(|f| f.eq_ignore_ascii_case(extension))
+                    filters.is_empty() || filters.iter().any(|f| f.eq_ignore_ascii_case(extension))
                 }
                 // Conservamos directorios solo si tienen contenido tras filtrar
                 Node::Directory { children, .. } => !children.is_empty() || filters.is_empty(),
@@ -87,13 +76,17 @@ pub fn build_tree(path: &Path, filters: &[String]) -> Result<Node> {
     }
 }
 
-/// Aplana el árbol a una lista de FileRecord (para CSV),
-/// aplicando el filtro de extensiones.
-pub fn flatten_to_records(node: &Node, filters: &[String], out: &mut Vec<FileRecord>) {
+/// Aplana el árbol a una lista de FileRecord (para CSV).
+/// El árbol ya viene filtrado por extensión desde `build_tree`,
+/// así que aquí solo recorremos y serializamos.
+///
+/// Si se pasa un `counter`, se incrementa por cada archivo procesado
+/// para reportar progreso granular a la GUI.
+pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>, counter: Option<&AtomicUsize>) {
     match node {
         Node::Directory { children, .. } => {
             for c in children {
-                flatten_to_records(c, filters, out);
+                flatten_to_records(c, out, counter);
             }
         }
         Node::File {
@@ -104,9 +97,6 @@ pub fn flatten_to_records(node: &Node, filters: &[String], out: &mut Vec<FileRec
             modified,
             ..
         } => {
-            if !matches_extension(path, filters) {
-                return;
-            }
             let stem = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
@@ -120,7 +110,7 @@ pub fn flatten_to_records(node: &Node, filters: &[String], out: &mut Vec<FileRec
                 name: stem,
                 extension: extension.clone(),
                 size_mb: (size_mb * 1000.0).round() / 1000.0, // 3 decimales
-                // 🆕 Formato DD/MM/AAAA (solo fecha, sin hora)
+                // Formato DD/MM/AAAA (solo fecha, sin hora)
                 created: created
                     .map(|d| d.format("%d/%m/%Y").to_string())
                     .unwrap_or_default(),
@@ -130,6 +120,11 @@ pub fn flatten_to_records(node: &Node, filters: &[String], out: &mut Vec<FileRec
                 directory: dir,
                 full_path: path.display().to_string(),
             });
+
+            // Reportar progreso si hay contador
+            if let Some(c) = counter {
+                c.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 }

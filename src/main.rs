@@ -2,10 +2,10 @@
 // porque queremos que la CLI siga mostrando salida en consola.
 
 mod cli;
-mod core;
 mod gui;
 mod models;
 mod reporters;
+mod runner;
 mod scanner;
 
 use anyhow::Result;
@@ -36,8 +36,12 @@ fn main() -> Result<()> {
     println!("🔍 Escaneando: {}", input.display());
 
     let start = Instant::now();
-    let summary = core::run(
-        &core::RunConfig { input, output, extensions },
+    let summary = runner::run(
+        &runner::RunConfig {
+            input,
+            output,
+            extensions,
+        },
         None,
     )?;
 

@@ -1,9 +1,9 @@
-use crate::core::{self, Progress, RunConfig, RunSummary};
+use crate::runner::{self, Progress, RunConfig, RunSummary};
 use anyhow::Result;
 use eframe::egui;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -19,7 +19,7 @@ pub fn launch() -> Result<()> {
     eframe::run_native(
         "File Reporter",
         options,
-        Box::new(|_cc| Ok(Box::<App>::default())), // 🔧 envuelto en Ok(...)
+        Box::new(|_cc| Ok(Box::<App>::default())),
     )
     .map_err(|e| anyhow::anyhow!("Error iniciando GUI: {e}"))
 }
@@ -91,7 +91,10 @@ impl eframe::App for App {
                         .hint_text("C:\\ruta\\a\\la\\carpeta")
                         .desired_width(450.0),
                 );
-                if ui.add_enabled(enabled, egui::Button::new("Examinar…")).clicked() {
+                if ui
+                    .add_enabled(enabled, egui::Button::new("Examinar…"))
+                    .clicked()
+                {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                         self.input_path = path.display().to_string();
                         if self.output_path.is_empty() {
@@ -113,7 +116,10 @@ impl eframe::App for App {
                         .hint_text("Por defecto: misma que la entrada")
                         .desired_width(450.0),
                 );
-                if ui.add_enabled(enabled, egui::Button::new("Examinar…")).clicked() {
+                if ui
+                    .add_enabled(enabled, egui::Button::new("Examinar…"))
+                    .clicked()
+                {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                         self.output_path = path.display().to_string();
                     }
@@ -138,7 +144,10 @@ impl eframe::App for App {
             ui.horizontal(|ui| {
                 let can_run = self.status != Status::Running && !self.input_path.trim().is_empty();
                 if ui
-                    .add_enabled(can_run, egui::Button::new("▶  Generar reportes").min_size(egui::vec2(180.0, 32.0)))
+                    .add_enabled(
+                        can_run,
+                        egui::Button::new("▶  Generar reportes").min_size(egui::vec2(180.0, 32.0)),
+                    )
                     .clicked()
                 {
                     self.start_run();
@@ -179,7 +188,10 @@ impl eframe::App for App {
             match self.status {
                 Status::Done => {
                     if let Some(s) = &self.summary {
-                        ui.colored_label(egui::Color32::from_rgb(0, 160, 0), "✅ Reportes generados:");
+                        ui.colored_label(
+                            egui::Color32::from_rgb(0, 160, 0),
+                            "✅ Reportes generados:",
+                        );
                         ui.monospace(format!("• CSV : {}", s.csv_path.display()));
                         ui.monospace(format!("• MD  : {}", s.md_path.display()));
                         ui.monospace(format!("• JSON: {}", s.json_path.display()));
@@ -194,7 +206,10 @@ impl eframe::App for App {
                 }
                 Status::Failed => {
                     if let Some(e) = &self.error {
-                        ui.colored_label(egui::Color32::from_rgb(200, 0, 0), format!("❌ Error: {e}"));
+                        ui.colored_label(
+                            egui::Color32::from_rgb(200, 0, 0),
+                            format!("❌ Error: {e}"),
+                        );
                     }
                 }
                 _ => {}
@@ -214,7 +229,7 @@ impl App {
         let progress = Progress::new();
         self.progress = Some(progress.clone());
 
-        let (tx, rx): (Sender<WorkerMsg>, Receiver<WorkerMsg>) = channel();
+        let (tx, rx) = mpsc::channel::<WorkerMsg>();
         self.rx = Some(rx);
 
         let input = PathBuf::from(self.input_path.trim());
@@ -230,11 +245,15 @@ impl App {
             .filter(|s| !s.is_empty())
             .collect();
 
-        let cfg = RunConfig { input, output, extensions };
+        let cfg = RunConfig {
+            input,
+            output,
+            extensions,
+        };
 
         // Worker en hilo separado para no bloquear la GUI
         std::thread::spawn(move || {
-            let result = core::run(&cfg, Some(progress));
+            let result = runner::run(&cfg, Some(progress));
             let msg = match result {
                 Ok(s) => WorkerMsg::Done(s),
                 Err(e) => WorkerMsg::Failed(e.to_string()),
@@ -277,7 +296,10 @@ fn fmt_seconds(s: f32) -> String {
 
 #[cfg(target_os = "windows")]
 fn open_in_explorer(path: &std::path::Path) -> std::io::Result<()> {
-    std::process::Command::new("explorer").arg(path).spawn().map(|_| ())
+    std::process::Command::new("explorer")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -286,5 +308,8 @@ fn open_in_explorer(path: &std::path::Path) -> std::io::Result<()> {
     let cmd = "open";
     #[cfg(all(unix, not(target_os = "macos")))]
     let cmd = "xdg-open";
-    std::process::Command::new(cmd).arg(path).spawn().map(|_| ())
+    std::process::Command::new(cmd)
+        .arg(path)
+        .spawn()
+        .map(|_| ())
 }

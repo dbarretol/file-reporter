@@ -12,7 +12,7 @@ clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0"
 rayon = "1.10"
 
-# 🆕 GUI
+# GUI
 eframe = { version = "0.28", default-features = false, features = ["default_fonts", "glow"] }
 egui = "0.28"
 rfd = "0.14"          # Diálogo nativo de selección de carpetas
@@ -20,6 +20,3 @@ rfd = "0.14"          # Diálogo nativo de selección de carpetas
 [profile.release]
 opt-level = 3
 lto = true
-
-# 🆕 En Windows: ocultar la consola cuando se ejecuta la GUI
-# (Si quieres ver la consola al usar CLI, mira la nota más abajo)
