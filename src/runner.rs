@@ -25,13 +25,19 @@ impl Progress {
         Arc::new(Self::default())
     }
 
+    /// Devuelve la fracción de progreso en [0.0, 1.0].
+    /// Protegido contra NaN, infinitos y valores fuera de rango.
     pub fn fraction(&self) -> f32 {
         let total = self.total.load(Ordering::Relaxed);
         let done = self.done.load(Ordering::Relaxed);
         if total == 0 {
-            0.0
+            return 0.0;
+        }
+        let f = done as f32 / total as f32;
+        if f.is_finite() {
+            f.clamp(0.0, 1.0)
         } else {
-            (done as f32 / total as f32).min(1.0)
+            0.0
         }
     }
 }

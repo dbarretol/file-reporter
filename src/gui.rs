@@ -202,14 +202,13 @@ impl App {
 
                 // Extensiones
                 ui.label(egui::RichText::new("🎯  Extensiones (separadas por coma)").size(12.0));
-                ui.horizontal(|ui| {
-                    ui.add_enabled(
-                        enabled,
-                        egui::TextEdit::singleline(&mut self.extensions)
-                            .hint_text("pdf, docx, jpg  (vacío = todas)")
-                            .desired_width(f32::INFINITY),
-                    );
-                });
+                let ext_width = ui.available_width().max(120.0);
+                ui.add_enabled(
+                    enabled,
+                    egui::TextEdit::singleline(&mut self.extensions)
+                        .hint_text("pdf, docx, jpg  (vacío = todas)")
+                        .desired_width(ext_width),
+                );
 
                 // Sugerencias rápidas
                 ui.add_space(4.0);
@@ -287,6 +286,7 @@ impl App {
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12.0))
             .show(ui, |ui| {
+                // Header: "Progreso" + ETA
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("Progreso").strong().size(13.0));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -299,12 +299,12 @@ impl App {
                 });
                 ui.add_space(6.0);
 
-                ui.add(
-                    egui::ProgressBar::new(frac)
-                        .desired_width(f32::INFINITY)
-                        .show_percentage()
-                        .animate(self.status == Status::Running),
-                );
+                // ProgressBar SIN desired_width: egui ajusta automáticamente
+                // y evitamos cualquier problema de cálculo de ancho.
+                let bar = egui::ProgressBar::new(frac.clamp(0.0, 1.0))
+                    .show_percentage()
+                    .animate(self.status == Status::Running);
+                ui.add(bar);
 
                 ui.add_space(4.0);
                 let label = if total > 0 {
@@ -420,11 +420,25 @@ impl App {
             extensions,
         };
 
+        // Worker en hilo separado. Capturamos panics para que nunca tumben la GUI.
         std::thread::spawn(move || {
-            let result = runner::run(&cfg, Some(progress));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                runner::run(&cfg, Some(progress))
+            }));
+
             let msg = match result {
-                Ok(s) => WorkerMsg::Done(s),
-                Err(e) => WorkerMsg::Failed(e.to_string()),
+                Ok(Ok(s)) => WorkerMsg::Done(s),
+                Ok(Err(e)) => WorkerMsg::Failed(e.to_string()),
+                Err(panic_payload) => {
+                    let detail = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "panic desconocido en el worker".to_string()
+                    };
+                    WorkerMsg::Failed(format!("Error inesperado: {detail}"))
+                }
             };
             let _ = tx.send(msg);
         });
@@ -461,9 +475,14 @@ fn folder_row(
     pick: impl FnOnce() -> Option<PathBuf>,
 ) {
     ui.horizontal(|ui| {
-        // El campo ocupa todo menos el ancho del botón
         let btn_width = 110.0;
-        let available = ui.available_width() - btn_width - ui.spacing().item_spacing.x;
+
+        // Calcular ancho disponible para el TextEdit, asegurando un mínimo seguro.
+        // Si la ventana es muy estrecha, available_width() podría ser menor que
+        // btn_width, lo que daría un valor negativo y haría panic a egui.
+        let raw = ui.available_width() - btn_width - ui.spacing().item_spacing.x;
+        let available = raw.max(80.0); // mínimo 80px para el input
+
         ui.add_enabled(
             enabled,
             egui::TextEdit::singleline(value)
@@ -484,24 +503,33 @@ fn folder_row(
     });
 }
 
-/// Fila de resultado: etiqueta + ruta truncada con tooltip.
+/// Fila de resultado: etiqueta + ruta con tooltip al pasar el mouse.
 fn result_row(ui: &mut egui::Ui, label: &str, path: &std::path::Path) {
-    ui.horizontal(|ui| {
+    let path_str = path.display().to_string();
+    let display = truncate_path_display(&path_str, 70);
+
+    ui.horizontal_wrapped(|ui| {
         ui.label(
-            egui::RichText::new(format!("• {label}"))
+            egui::RichText::new(format!("• {label}:"))
                 .strong()
                 .size(12.0),
         );
-        let path_str = path.display().to_string();
-        // Truncar visualmente paths largos pero permitir ver el completo en tooltip
-        let display = if path_str.len() > 70 {
-            format!("…{}", &path_str[path_str.len() - 67..])
-        } else {
-            path_str.clone()
-        };
-        ui.add(egui::Label::new(egui::RichText::new(display).monospace().size(11.0)).truncate())
+        ui.label(egui::RichText::new(display).monospace().size(11.0))
             .on_hover_text(&path_str);
     });
+}
+
+/// Trunca un string a `max_chars` caracteres (no bytes), prefijando "…"
+/// si fue acortado. Seguro con UTF-8.
+fn truncate_path_display(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_chars {
+        return s.to_string();
+    }
+    // Tomar los últimos (max_chars - 1) caracteres y prefijar con "…"
+    let skip = char_count - (max_chars - 1);
+    let tail: String = s.chars().skip(skip).collect();
+    format!("…{}", tail)
 }
 
 fn fmt_seconds(s: f32) -> String {
