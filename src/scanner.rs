@@ -120,8 +120,13 @@ pub fn flatten_to_records(node: &Node, filters: &[String], out: &mut Vec<FileRec
                 name: stem,
                 extension: extension.clone(),
                 size_mb: (size_mb * 1000.0).round() / 1000.0, // 3 decimales
-                created: created.map(|d| d.to_rfc3339()).unwrap_or_default(),
-                modified: modified.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                // 🆕 Formato DD/MM/AAAA (solo fecha, sin hora)
+                created: created
+                    .map(|d| d.format("%d/%m/%Y").to_string())
+                    .unwrap_or_default(),
+                modified: modified
+                    .map(|d| d.format("%d/%m/%Y").to_string())
+                    .unwrap_or_default(),
                 directory: dir,
                 full_path: path.display().to_string(),
             });
