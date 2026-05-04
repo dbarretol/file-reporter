@@ -1,6 +1,6 @@
 [package]
 name = "file-reporter"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -8,11 +8,18 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 csv = "1.3"
 chrono = { version = "0.4", features = ["serde"] }
-walkdir = "2.5"
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0"
-rayon = "1.10"        # Paralelismo para grandes volúmenes
+rayon = "1.10"
+
+# 🆕 GUI
+eframe = { version = "0.28", default-features = false, features = ["default_fonts", "glow"] }
+egui = "0.28"
+rfd = "0.14"          # Diálogo nativo de selección de carpetas
 
 [profile.release]
 opt-level = 3
 lto = true
+
+# 🆕 En Windows: ocultar la consola cuando se ejecuta la GUI
+# (Si quieres ver la consola al usar CLI, mira la nota más abajo)
