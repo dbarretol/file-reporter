@@ -10,9 +10,10 @@ use std::time::Instant;
 pub fn launch() -> Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([720.0, 600.0])
-            .with_min_inner_size([600.0, 500.0])
+            .with_inner_size([980.0, 640.0]) // ancho suficiente para MAX_CONTENT_WIDTH (900) + márgenes
+            .with_min_inner_size([720.0, 500.0]) // mínimo cómodo
             .with_title("File Reporter"),
+        centered: true, // abre centrada en la pantalla (cuando el OS lo permite)
         ..Default::default()
     };
 
@@ -147,14 +148,44 @@ impl eframe::App for App {
         // Panel principal
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.add_space(12.0);
-                self.render_form(ui);
-                ui.add_space(8.0);
-                self.render_actions(ui);
-                ui.add_space(8.0);
-                self.render_progress(ui);
-                ui.add_space(8.0);
-                self.render_results(ui);
+                // Centrar el contenido y limitar su ancho máximo en pantallas grandes.
+                const MAX_CONTENT_WIDTH: f32 = 900.0;
+                const SIDE_PADDING: f32 = 16.0;
+
+                let available = ui.available_width();
+
+                // El contenido NUNCA debe exceder lo realmente disponible.
+                // - En pantallas grandes: usa MAX_CONTENT_WIDTH y se centra.
+                // - En pantallas pequeñas: usa todo el ancho menos el padding mínimo.
+                let content_width = if available > MAX_CONTENT_WIDTH + 2.0 * SIDE_PADDING {
+                    MAX_CONTENT_WIDTH
+                } else {
+                    (available - 2.0 * SIDE_PADDING).max(200.0)
+                };
+
+                let side_margin = ((available - content_width) / 2.0).max(SIDE_PADDING);
+
+                egui::Frame::none()
+                    .inner_margin(egui::Margin {
+                        left: side_margin,
+                        right: side_margin,
+                        top: 0.0,
+                        bottom: 0.0,
+                    })
+                    .show(ui, |ui| {
+                        // Forzamos a TODOS los hijos a respetar el ancho máximo.
+                        ui.set_max_width(content_width);
+
+                        ui.add_space(12.0);
+                        self.render_form(ui);
+                        ui.add_space(8.0);
+                        self.render_actions(ui);
+                        ui.add_space(8.0);
+                        self.render_progress(ui);
+                        ui.add_space(8.0);
+                        self.render_results(ui);
+                        ui.add_space(12.0);
+                    });
             });
         });
     }
@@ -476,12 +507,12 @@ fn folder_row(
 ) {
     ui.horizontal(|ui| {
         let btn_width = 110.0;
+        let spacing = ui.spacing().item_spacing.x;
 
-        // Calcular ancho disponible para el TextEdit, asegurando un mínimo seguro.
-        // Si la ventana es muy estrecha, available_width() podría ser menor que
-        // btn_width, lo que daría un valor negativo y haría panic a egui.
-        let raw = ui.available_width() - btn_width - ui.spacing().item_spacing.x;
-        let available = raw.max(80.0); // mínimo 80px para el input
+        // Ancho disponible REAL (respetando max_width del padre).
+        // Reservamos el botón + spacing + un pequeño margen de seguridad.
+        let raw = ui.available_width() - btn_width - spacing - 4.0;
+        let available = raw.clamp(80.0, 2000.0); // mínimo 80, máximo 2000
 
         ui.add_enabled(
             enabled,
