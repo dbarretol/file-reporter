@@ -10,8 +10,8 @@ use std::time::Instant;
 pub fn launch() -> Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([640.0, 460.0])
-            .with_min_inner_size([520.0, 380.0])
+            .with_inner_size([720.0, 600.0])
+            .with_min_inner_size([600.0, 500.0])
             .with_title("File Reporter"),
         ..Default::default()
     };
@@ -19,9 +19,31 @@ pub fn launch() -> Result<()> {
     eframe::run_native(
         "File Reporter",
         options,
-        Box::new(|_cc| Ok(Box::<App>::default())),
+        Box::new(|cc| {
+            // Estilo global más amigable
+            setup_custom_style(&cc.egui_ctx);
+            Ok(Box::<App>::default())
+        }),
     )
     .map_err(|e| anyhow::anyhow!("Error iniciando GUI: {e}"))
+}
+
+/// Ajustes visuales globales (espaciado, tipografía, etc.).
+fn setup_custom_style(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+
+    // Espaciado más generoso
+    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+    style.spacing.button_padding = egui::vec2(12.0, 6.0);
+    style.spacing.interact_size.y = 28.0;
+
+    // Bordes ligeramente más redondeados
+    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(4.0);
+    style.visuals.widgets.inactive.rounding = egui::Rounding::same(4.0);
+    style.visuals.widgets.hovered.rounding = egui::Rounding::same(4.0);
+    style.visuals.widgets.active.rounding = egui::Rounding::same(4.0);
+
+    ctx.set_style(style);
 }
 
 #[derive(Default)]
@@ -53,9 +75,14 @@ enum WorkerMsg {
     Failed(String),
 }
 
+// ─── Constantes de estilo ────────────────────────────────────────
+const ACCENT: egui::Color32 = egui::Color32::from_rgb(70, 130, 220);
+const SUCCESS: egui::Color32 = egui::Color32::from_rgb(46, 160, 67);
+const ERROR: egui::Color32 = egui::Color32::from_rgb(220, 70, 70);
+const MUTED: egui::Color32 = egui::Color32::from_rgb(150, 150, 150);
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Pedir repintado constante mientras se ejecuta (para refrescar progreso/ETA)
         if self.status == Status::Running {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
@@ -76,151 +103,293 @@ impl eframe::App for App {
             }
         }
 
+        // Top bar con título
+        egui::TopBottomPanel::top("header")
+            .exact_height(56.0)
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(16.0);
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("📋  File Reporter")
+                                .size(20.0)
+                                .strong(),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Genera reportes (CSV, Markdown, JSON) de la estructura de un directorio",
+                            )
+                            .color(MUTED)
+                            .size(12.0),
+                        );
+                    });
+                });
+            });
+
+        // Status bar abajo
+        egui::TopBottomPanel::bottom("statusbar")
+            .exact_height(24.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(12.0);
+                    let (icon, text, color) = match self.status {
+                        Status::Idle => ("⚪", "Listo", MUTED),
+                        Status::Running => ("🔵", "Procesando…", ACCENT),
+                        Status::Done => ("🟢", "Completado", SUCCESS),
+                        Status::Failed => ("🔴", "Error", ERROR),
+                    };
+                    ui.colored_label(color, icon);
+                    ui.colored_label(color, text);
+                });
+            });
+
+        // Panel principal
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("📋 File Reporter");
-            ui.label("Genera reportes (CSV, Markdown, JSON) de la estructura de un directorio.");
-            ui.separator();
-
-            // ─── Carpeta de entrada ──────────────────────────────
-            ui.label("📁 Carpeta a escanear:");
-            ui.horizontal(|ui| {
-                let enabled = self.status != Status::Running;
-                ui.add_enabled(
-                    enabled,
-                    egui::TextEdit::singleline(&mut self.input_path)
-                        .hint_text("C:\\ruta\\a\\la\\carpeta")
-                        .desired_width(450.0),
-                );
-                if ui
-                    .add_enabled(enabled, egui::Button::new("Examinar…"))
-                    .clicked()
-                {
-                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                        self.input_path = path.display().to_string();
-                        if self.output_path.is_empty() {
-                            self.output_path = self.input_path.clone();
-                        }
-                    }
-                }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.add_space(12.0);
+                self.render_form(ui);
+                ui.add_space(8.0);
+                self.render_actions(ui);
+                ui.add_space(8.0);
+                self.render_progress(ui);
+                ui.add_space(8.0);
+                self.render_results(ui);
             });
-
-            ui.add_space(8.0);
-
-            // ─── Carpeta de salida ───────────────────────────────
-            ui.label("💾 Carpeta de salida (opcional):");
-            ui.horizontal(|ui| {
-                let enabled = self.status != Status::Running;
-                ui.add_enabled(
-                    enabled,
-                    egui::TextEdit::singleline(&mut self.output_path)
-                        .hint_text("Por defecto: misma que la entrada")
-                        .desired_width(450.0),
-                );
-                if ui
-                    .add_enabled(enabled, egui::Button::new("Examinar…"))
-                    .clicked()
-                {
-                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                        self.output_path = path.display().to_string();
-                    }
-                }
-            });
-
-            ui.add_space(8.0);
-
-            // ─── Extensiones ─────────────────────────────────────
-            ui.label("🎯 Extensiones (separadas por coma, vacío = todas):");
-            ui.add_enabled(
-                self.status != Status::Running,
-                egui::TextEdit::singleline(&mut self.extensions)
-                    .hint_text("pdf, docx, jpg")
-                    .desired_width(f32::INFINITY),
-            );
-
-            ui.add_space(12.0);
-            ui.separator();
-
-            // ─── Botón de ejecución ──────────────────────────────
-            ui.horizontal(|ui| {
-                let can_run = self.status != Status::Running && !self.input_path.trim().is_empty();
-                if ui
-                    .add_enabled(
-                        can_run,
-                        egui::Button::new("▶  Generar reportes").min_size(egui::vec2(180.0, 32.0)),
-                    )
-                    .clicked()
-                {
-                    self.start_run();
-                }
-
-                if self.status == Status::Running {
-                    ui.spinner();
-                    ui.label("Procesando…");
-                }
-            });
-
-            ui.add_space(10.0);
-
-            // ─── Barra de progreso + ETA ─────────────────────────
-            if let Some(p) = &self.progress {
-                let frac = p.fraction();
-                let done = p.done.load(Ordering::Relaxed);
-                let total = p.total.load(Ordering::Relaxed);
-
-                let eta_text = self.compute_eta(frac);
-                let label = if total > 0 {
-                    format!("{} / {} archivos  •  {}", done, total, eta_text)
-                } else {
-                    "Contando archivos…".to_string()
-                };
-
-                ui.add(
-                    egui::ProgressBar::new(frac)
-                        .show_percentage()
-                        .animate(self.status == Status::Running),
-                );
-                ui.label(label);
-            }
-
-            ui.add_space(10.0);
-
-            // ─── Resultados / errores ────────────────────────────
-            match self.status {
-                Status::Done => {
-                    if let Some(s) = &self.summary {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(0, 160, 0),
-                            "✅ Reportes generados:",
-                        );
-                        ui.monospace(format!("• CSV : {}", s.csv_path.display()));
-                        ui.monospace(format!("• MD  : {}", s.md_path.display()));
-                        ui.monospace(format!("• JSON: {}", s.json_path.display()));
-                        ui.label(format!("Total de archivos procesados: {}", s.files_count));
-
-                        if ui.button("📂 Abrir carpeta de salida").clicked() {
-                            if let Some(parent) = s.csv_path.parent() {
-                                let _ = open_in_explorer(parent);
-                            }
-                        }
-                    }
-                }
-                Status::Failed => {
-                    if let Some(e) = &self.error {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(200, 0, 0),
-                            format!("❌ Error: {e}"),
-                        );
-                    }
-                }
-                _ => {}
-            }
         });
     }
 }
 
 impl App {
+    /// ─── Sección: Formulario de entrada ──────────────────────────
+    fn render_form(&mut self, ui: &mut egui::Ui) {
+        let enabled = self.status != Status::Running;
+
+        egui::Frame::group(ui.style())
+            .inner_margin(egui::Margin::same(12.0))
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new("Configuración").strong().size(14.0));
+                ui.add_space(6.0);
+
+                // Carpeta a escanear
+                ui.label(egui::RichText::new("📁  Carpeta a escanear").size(12.0));
+                folder_row(
+                    ui,
+                    &mut self.input_path,
+                    enabled,
+                    "Selecciona la carpeta…",
+                    || rfd::FileDialog::new().pick_folder(),
+                );
+
+                // Si el usuario eligió input pero output está vacío, sincronizar
+                if !self.input_path.is_empty() && self.output_path.is_empty() {
+                    self.output_path = self.input_path.clone();
+                }
+
+                ui.add_space(8.0);
+
+                // Carpeta de salida
+                ui.label(egui::RichText::new("💾  Carpeta de salida").size(12.0));
+                folder_row(
+                    ui,
+                    &mut self.output_path,
+                    enabled,
+                    "Por defecto: misma que la entrada",
+                    || rfd::FileDialog::new().pick_folder(),
+                );
+
+                ui.add_space(8.0);
+
+                // Extensiones
+                ui.label(egui::RichText::new("🎯  Extensiones (separadas por coma)").size(12.0));
+                ui.horizontal(|ui| {
+                    ui.add_enabled(
+                        enabled,
+                        egui::TextEdit::singleline(&mut self.extensions)
+                            .hint_text("pdf, docx, jpg  (vacío = todas)")
+                            .desired_width(f32::INFINITY),
+                    );
+                });
+
+                // Sugerencias rápidas
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new("Sugerencias:").color(MUTED).size(11.0));
+                    for preset in [
+                        "pdf, docx, xlsx",
+                        "jpg, png, gif",
+                        "mp4, mkv, avi",
+                        "txt, md",
+                    ] {
+                        if ui
+                            .add_enabled(
+                                enabled,
+                                egui::Button::new(egui::RichText::new(preset).size(11.0)).small(),
+                            )
+                            .clicked()
+                        {
+                            self.extensions = preset.to_string();
+                        }
+                    }
+                });
+            });
+    }
+
+    /// ─── Sección: Botones de acción ──────────────────────────────
+    fn render_actions(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let can_run = self.status != Status::Running && !self.input_path.trim().is_empty();
+
+            let run_btn = egui::Button::new(
+                egui::RichText::new("▶  Generar reportes")
+                    .size(14.0)
+                    .strong()
+                    .color(egui::Color32::WHITE),
+            )
+            .fill(ACCENT)
+            .min_size(egui::vec2(180.0, 36.0));
+
+            if ui.add_enabled(can_run, run_btn).clicked() {
+                self.start_run();
+            }
+
+            // Botón secundario: limpiar
+            let can_clear = self.status != Status::Running
+                && (!self.input_path.is_empty()
+                    || !self.output_path.is_empty()
+                    || !self.extensions.is_empty());
+            if ui
+                .add_enabled(
+                    can_clear,
+                    egui::Button::new("🧹  Limpiar").min_size(egui::vec2(100.0, 36.0)),
+                )
+                .clicked()
+            {
+                self.input_path.clear();
+                self.output_path.clear();
+                self.extensions.clear();
+                self.summary = None;
+                self.error = None;
+                self.progress = None;
+                self.status = Status::Idle;
+            }
+        });
+    }
+
+    /// ─── Sección: Barra de progreso + ETA ────────────────────────
+    fn render_progress(&self, ui: &mut egui::Ui) {
+        let Some(p) = &self.progress else { return };
+
+        let frac = p.fraction();
+        let done = p.done.load(Ordering::Relaxed);
+        let total = p.total.load(Ordering::Relaxed);
+
+        egui::Frame::group(ui.style())
+            .inner_margin(egui::Margin::same(12.0))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Progreso").strong().size(13.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            egui::RichText::new(self.compute_eta(frac))
+                                .color(MUTED)
+                                .size(12.0),
+                        );
+                    });
+                });
+                ui.add_space(6.0);
+
+                ui.add(
+                    egui::ProgressBar::new(frac)
+                        .desired_width(f32::INFINITY)
+                        .show_percentage()
+                        .animate(self.status == Status::Running),
+                );
+
+                ui.add_space(4.0);
+                let label = if total > 0 {
+                    format!("{} / {} archivos procesados", done, total)
+                } else {
+                    "Contando archivos…".to_string()
+                };
+                ui.label(egui::RichText::new(label).color(MUTED).size(11.0));
+            });
+    }
+
+    /// ─── Sección: Resultados o error ─────────────────────────────
+    fn render_results(&self, ui: &mut egui::Ui) {
+        match self.status {
+            Status::Done => {
+                let Some(s) = &self.summary else { return };
+
+                egui::Frame::group(ui.style())
+                    .inner_margin(egui::Margin::same(12.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.colored_label(SUCCESS, egui::RichText::new("✅").size(16.0));
+                            ui.label(
+                                egui::RichText::new("Reportes generados correctamente")
+                                    .strong()
+                                    .size(14.0)
+                                    .color(SUCCESS),
+                            );
+                        });
+                        ui.add_space(6.0);
+                        ui.label(format!(
+                            "📊 Total de archivos procesados: {}",
+                            s.files_count
+                        ));
+                        ui.add_space(8.0);
+
+                        // Tabla de archivos generados
+                        result_row(ui, "CSV", &s.csv_path);
+                        result_row(ui, "Markdown", &s.md_path);
+                        result_row(ui, "JSON", &s.json_path);
+
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button(
+                                    egui::RichText::new("📂  Abrir carpeta de salida").size(12.0),
+                                )
+                                .clicked()
+                            {
+                                if let Some(parent) = s.csv_path.parent() {
+                                    let _ = open_in_explorer(parent);
+                                }
+                            }
+                            if ui
+                                .button(egui::RichText::new("📄  Abrir CSV").size(12.0))
+                                .clicked()
+                            {
+                                let _ = open_in_explorer(&s.csv_path);
+                            }
+                        });
+                    });
+            }
+            Status::Failed => {
+                let Some(e) = &self.error else { return };
+                egui::Frame::group(ui.style())
+                    .inner_margin(egui::Margin::same(12.0))
+                    .fill(egui::Color32::from_rgba_unmultiplied(220, 70, 70, 20))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.colored_label(ERROR, egui::RichText::new("❌").size(16.0));
+                            ui.label(
+                                egui::RichText::new("Ha ocurrido un error")
+                                    .strong()
+                                    .color(ERROR),
+                            );
+                        });
+                        ui.add_space(4.0);
+                        ui.label(egui::RichText::new(e).monospace().size(12.0));
+                    });
+            }
+            _ => {}
+        }
+    }
+
     fn start_run(&mut self) {
-        // Reset de estado
         self.summary = None;
         self.error = None;
         self.status = Status::Running;
@@ -251,7 +420,6 @@ impl App {
             extensions,
         };
 
-        // Worker en hilo separado para no bloquear la GUI
         std::thread::spawn(move || {
             let result = runner::run(&cfg, Some(progress));
             let msg = match result {
@@ -264,20 +432,76 @@ impl App {
 
     fn compute_eta(&self, fraction: f32) -> String {
         let Some(start) = self.started_at else {
-            return "ETA: --".into();
+            return "ETA: —".into();
         };
         if fraction <= 0.001 {
             return "ETA: calculando…".into();
         }
         if fraction >= 1.0 || self.status == Status::Done {
-            let elapsed = start.elapsed().as_secs_f32();
-            return format!("Tiempo total: {}", fmt_seconds(elapsed));
+            return format!(
+                "⏱  Tiempo total: {}",
+                fmt_seconds(start.elapsed().as_secs_f32())
+            );
         }
         let elapsed = start.elapsed().as_secs_f32();
         let total_est = elapsed / fraction;
         let remaining = (total_est - elapsed).max(0.0);
-        format!("ETA: {}", fmt_seconds(remaining))
+        format!("⏳  ETA: {}", fmt_seconds(remaining))
     }
+}
+
+// ─── Helpers de UI ──────────────────────────────────────────────
+
+/// Fila de selección de carpeta: input + botón "Examinar…" alineados.
+fn folder_row(
+    ui: &mut egui::Ui,
+    value: &mut String,
+    enabled: bool,
+    hint: &str,
+    pick: impl FnOnce() -> Option<PathBuf>,
+) {
+    ui.horizontal(|ui| {
+        // El campo ocupa todo menos el ancho del botón
+        let btn_width = 110.0;
+        let available = ui.available_width() - btn_width - ui.spacing().item_spacing.x;
+        ui.add_enabled(
+            enabled,
+            egui::TextEdit::singleline(value)
+                .hint_text(hint)
+                .desired_width(available),
+        );
+        if ui
+            .add_enabled(
+                enabled,
+                egui::Button::new("📂  Examinar…").min_size(egui::vec2(btn_width, 0.0)),
+            )
+            .clicked()
+        {
+            if let Some(path) = pick() {
+                *value = path.display().to_string();
+            }
+        }
+    });
+}
+
+/// Fila de resultado: etiqueta + ruta truncada con tooltip.
+fn result_row(ui: &mut egui::Ui, label: &str, path: &std::path::Path) {
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!("• {label}"))
+                .strong()
+                .size(12.0),
+        );
+        let path_str = path.display().to_string();
+        // Truncar visualmente paths largos pero permitir ver el completo en tooltip
+        let display = if path_str.len() > 70 {
+            format!("…{}", &path_str[path_str.len() - 67..])
+        } else {
+            path_str.clone()
+        };
+        ui.add(egui::Label::new(egui::RichText::new(display).monospace().size(11.0)).truncate())
+            .on_hover_text(&path_str);
+    });
 }
 
 fn fmt_seconds(s: f32) -> String {
