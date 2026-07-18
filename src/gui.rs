@@ -185,7 +185,7 @@ impl eframe::App for App {
                     } else {
                         match self.status {
                             Status::Idle => ("⚪", "Listo", MUTED),
-                            Status::Running => ("🔵", "Procesando…", ACCENT),
+                            Status::Running => ("🔵", self.running_phase_text(), ACCENT),
                             Status::Done => ("🟢", "Completado", SUCCESS),
                             Status::Failed => ("🔴", "Error", ERROR),
                         }
@@ -502,6 +502,7 @@ impl App {
         let frac = p.fraction();
         let done = p.done.load(Ordering::Relaxed);
         let total = p.total.load(Ordering::Relaxed);
+        let writing = p.writing.load(Ordering::Relaxed);
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12.0))
@@ -519,7 +520,19 @@ impl App {
                 });
                 ui.add_space(6.0);
 
-                if total > 0 {
+                if writing {
+                    // El escaneo ya terminó (done/total quedaron fijos en el
+                    // conteo final); ahora se escriben los 3 reportes, lo
+                    // cual puede tardar un momento con árboles muy grandes.
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(
+                            egui::RichText::new("Generando reportes…")
+                                .color(MUTED)
+                                .size(12.0),
+                        );
+                    });
+                } else if total > 0 {
                     // ProgressBar SIN desired_width: egui ajusta automáticamente
                     // y evitamos cualquier problema de cálculo de ancho.
                     let bar = egui::ProgressBar::new(frac.clamp(0.0, 1.0))
@@ -548,6 +561,20 @@ impl App {
                     });
                 }
             });
+    }
+
+    /// Texto de la barra de estado mientras hay un escaneo en curso: la fase
+    /// real (Escaneando vs. Generando reportes), no un genérico "Procesando…".
+    fn running_phase_text(&self) -> &'static str {
+        let writing = self
+            .progress
+            .as_ref()
+            .is_some_and(|p| p.writing.load(Ordering::Relaxed));
+        if writing {
+            "Generando reportes…"
+        } else {
+            "Escaneando…"
+        }
     }
 
     /// ─── Sección: Resultados o error ─────────────────────────────

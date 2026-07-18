@@ -19,6 +19,11 @@ pub struct Progress {
     pub done: AtomicUsize,    // archivos procesados
     pub cancel: AtomicBool,   // la GUI la pone en true para pedir cancelación
     pub skipped: AtomicUsize, // carpetas/archivos que no se pudieron leer
+    /// `false` mientras se escanea el disco, `true` una vez terminado el
+    /// escaneo y mientras se escriben report.csv/md/json. Permite que la
+    /// GUI distinga la fase real en curso en vez de mostrar un genérico
+    /// "Procesando…" durante todo el proceso.
+    pub writing: AtomicBool,
 }
 
 impl Progress {
@@ -123,6 +128,9 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
 
     // Fase 4: crear la carpeta de salida (después de escanear, para que no
     // aparezca a mitad de árbol) y generar reportes.
+    if let Some(p) = &progress {
+        p.writing.store(true, Ordering::Relaxed);
+    }
     std::fs::create_dir_all(&cfg.output).with_context(|| {
         format!(
             "No se pudo crear el directorio de salida {}",
@@ -152,4 +160,5 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
 fn is_cancelled(cancel: Option<&AtomicBool>) -> bool {
     cancel.is_some_and(|c| c.load(Ordering::Relaxed))
 }
+
 
