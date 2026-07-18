@@ -215,11 +215,6 @@ impl App {
                     || rfd::FileDialog::new().pick_folder(),
                 );
 
-                // Si el usuario eligió input pero output está vacío, sincronizar
-                if !self.input_path.is_empty() && self.output_path.is_empty() {
-                    self.output_path = self.input_path.clone();
-                }
-
                 ui.add_space(8.0);
 
                 // Carpeta de salida
