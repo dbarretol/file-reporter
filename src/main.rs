@@ -13,8 +13,24 @@ use clap::Parser;
 use cli::Cli;
 use std::time::Instant;
 
+/// Tamaño de pila para los hilos que recorren el árbol de directorios
+/// (`scanner::build_tree` es recursiva). El valor por defecto de Rust/rayon
+/// (~2 MB) alcanza para anidamientos normales, pero un árbol patológicamente
+/// profundo (rutas largas de Windows con `\\?\`, hasta ~32 767 caracteres)
+/// podría, en teoría, agotarlo. 16 MB da margen amplio para ese caso extremo
+/// sin coste real (unos pocos hilos reservan memoria virtual, no física, por
+/// adelantado). Ver tarea 23 en tasks.md.
+pub const SCAN_THREAD_STACK_SIZE: usize = 16 * 1024 * 1024;
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+
+    // Aplica a los hilos internos de rayon (`par_iter` en `scanner::build_tree`)
+    // tanto en CLI como en GUI. Si ya existiera un pool global (no debería,
+    // esto corre una sola vez al inicio) simplemente se ignora el error.
+    let _ = rayon::ThreadPoolBuilder::new()
+        .stack_size(SCAN_THREAD_STACK_SIZE)
+        .build_global();
 
     // Sin argumentos → lanzar GUI
     if args.len() <= 1 {

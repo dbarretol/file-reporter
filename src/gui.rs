@@ -757,27 +757,36 @@ impl App {
         self.rx = Some(rx);
 
         // Worker en hilo separado. Capturamos panics para que nunca tumben la GUI.
-        std::thread::spawn(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                runner::run(&cfg, Some(progress))
-            }));
+        // Pila ampliada (ver `main::SCAN_THREAD_STACK_SIZE`): este hilo inicia la
+        // recursión de `scanner::build_tree` y, por el work-stealing de rayon,
+        // también puede ejecutar parte de ella directamente en su propia pila.
+        let spawn_result = std::thread::Builder::new()
+            .stack_size(crate::SCAN_THREAD_STACK_SIZE)
+            .spawn(move || {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    runner::run(&cfg, Some(progress))
+                }));
 
-            let msg = match result {
-                Ok(Ok(s)) => WorkerMsg::Done(s),
-                Ok(Err(e)) => WorkerMsg::Failed(e.to_string()),
-                Err(panic_payload) => {
-                    let detail = if let Some(s) = panic_payload.downcast_ref::<&str>() {
-                        s.to_string()
-                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                        s.clone()
-                    } else {
-                        "panic desconocido en el worker".to_string()
-                    };
-                    WorkerMsg::Failed(format!("Error inesperado: {detail}"))
-                }
-            };
-            let _ = tx.send(msg);
-        });
+                let msg = match result {
+                    Ok(Ok(s)) => WorkerMsg::Done(s),
+                    Ok(Err(e)) => WorkerMsg::Failed(e.to_string()),
+                    Err(panic_payload) => {
+                        let detail = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                            s.to_string()
+                        } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                            s.clone()
+                        } else {
+                            "panic desconocido en el worker".to_string()
+                        };
+                        WorkerMsg::Failed(format!("Error inesperado: {detail}"))
+                    }
+                };
+                let _ = tx.send(msg);
+            });
+        if spawn_result.is_err() {
+            self.status = Status::Idle;
+            self.ui_error = Some("No se pudo iniciar el hilo de escaneo".to_string());
+        }
     }
 
     fn compute_eta(&self, fraction: f32) -> String {

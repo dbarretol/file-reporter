@@ -31,6 +31,18 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
 /// pudo leer (permisos, entrada corrupta, etc. — no por symlinks omitidos
 /// ni por cancelación, que son casos intencionales, no fallos), para que el
 /// resultado final pueda avisar de que el reporte quedó incompleto.
+///
+/// Recursión y límite de pila: cada nivel de profundidad del árbol añade un
+/// marco a la pila del hilo que lo recorre (el propio `rayon::par_iter` de
+/// más abajo, por work-stealing, también ejecuta parte de la recursión en el
+/// hilo que la inicia, no solo en hilos "hijos"). `main.rs` configura tanto
+/// el pool global de rayon como el hilo worker de la GUI con 16 MB de pila
+/// (8x el valor por defecto de Rust) para dar margen amplio ante anidamientos
+/// extremos (rutas largas `\\?\` de Windows, symlinks NTFS anidados antes de
+/// resolverse, etc.). Un recorrido iterativo con pila explícita eliminaría el
+/// límite por completo, pero se descarta por ahora: la auditoría marca este
+/// punto como bajo riesgo y una pila de 16 MB ya cubre profundidades muy por
+/// encima de cualquier estructura de archivos real.
 pub fn build_tree(
     path: &Path,
     filters: &[String],
