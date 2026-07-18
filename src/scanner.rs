@@ -19,7 +19,16 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
 /// Si se pasa un `counter`, se incrementa por cada archivo que pase el filtro
 /// de extensión, a medida que se procesa (durante el I/O real), para reportar
 /// progreso granular a la GUI.
-pub fn build_tree(path: &Path, filters: &[String], counter: Option<&AtomicUsize>) -> Result<Node> {
+///
+/// `excluded` son rutas exactas (típicamente los reportes de la carpeta de
+/// salida) que se omiten del escaneo para que una corrida no se incluya a
+/// sí misma ni a la anterior.
+pub fn build_tree(
+    path: &Path,
+    filters: &[String],
+    counter: Option<&AtomicUsize>,
+    excluded: &[PathBuf],
+) -> Result<Node> {
     // symlink_metadata (a diferencia de metadata) no sigue enlaces simbólicos
     // ni junctions de Windows, evitando recursión infinita en ciclos.
     let metadata = fs::symlink_metadata(path)
@@ -35,16 +44,19 @@ pub fn build_tree(path: &Path, filters: &[String], counter: Option<&AtomicUsize>
         .unwrap_or_else(|| path.display().to_string());
 
     if metadata.is_dir() {
-        // Recolectamos rutas hijas
+        // Recolectamos rutas hijas, omitiendo las excluidas (reportes propios)
         let entries: Vec<PathBuf> = match fs::read_dir(path) {
-            Ok(rd) => rd.filter_map(|e| e.ok().map(|e| e.path())).collect(),
+            Ok(rd) => rd
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| !excluded.contains(p))
+                .collect(),
             Err(_) => Vec::new(), // sin permisos -> directorio vacío
         };
 
         // Procesamos hijos en paralelo
         let mut children: Vec<Node> = entries
             .par_iter()
-            .filter_map(|p| build_tree(p, filters, counter).ok())
+            .filter_map(|p| build_tree(p, filters, counter, excluded).ok())
             .filter(|n| match n {
                 // Conservamos archivos que pasen el filtro
                 Node::File { extension, .. } => {

@@ -61,16 +61,23 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         bail!("La ruta no es un directorio: {}", cfg.input.display());
     }
 
-    std::fs::create_dir_all(&cfg.output).with_context(|| {
-        format!(
-            "No se pudo crear el directorio de salida {}",
-            cfg.output.display()
-        )
-    })?;
+    let csv_path = cfg.output.join("report.csv");
+    let md_path = cfg.output.join("report.md");
+    let json_path = cfg.output.join("report.json");
+
+    // Excluir del escaneo los reportes de una corrida anterior (siempre) y,
+    // si la salida es una carpeta distinta de la entrada, la carpeta de
+    // salida completa (por si contiene sobras de corridas previas). Cuando
+    // output == input no se puede excluir la carpeta entera, solo los 3
+    // archivos exactos.
+    let mut excluded = vec![csv_path.clone(), md_path.clone(), json_path.clone()];
+    if cfg.output != cfg.input {
+        excluded.push(cfg.output.clone());
+    }
 
     // Fase 1: contar archivos para estimar el progreso (rápido)
     if let Some(p) = &progress {
-        let total = count_files(&cfg.input, &cfg.extensions);
+        let total = count_files(&cfg.input, &cfg.extensions, &excluded);
         p.total.store(total, Ordering::Relaxed);
         p.done.store(0, Ordering::Relaxed);
     }
@@ -81,6 +88,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         &cfg.input,
         &cfg.extensions,
         progress.as_ref().map(|p| &p.done),
+        &excluded,
     )
     .context("Error al construir el árbol de directorios")?;
 
@@ -97,10 +105,14 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         }
     }
 
-    // Fase 4: generar reportes
-    let csv_path = cfg.output.join("report.csv");
-    let md_path = cfg.output.join("report.md");
-    let json_path = cfg.output.join("report.json");
+    // Fase 4: crear la carpeta de salida (después de escanear, para que no
+    // aparezca a mitad de árbol) y generar reportes.
+    std::fs::create_dir_all(&cfg.output).with_context(|| {
+        format!(
+            "No se pudo crear el directorio de salida {}",
+            cfg.output.display()
+        )
+    })?;
 
     reporters::csv::write_csv(&records, &csv_path)?;
     reporters::markdown::write_markdown(&tree, &md_path)?;
@@ -119,10 +131,14 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
 }
 
 /// Cuenta archivos rápidamente (sin leer metadatos completos) para el ETA.
-fn count_files(path: &Path, filters: &[String]) -> usize {
+fn count_files(path: &Path, filters: &[String], excluded: &[PathBuf]) -> usize {
     let mut count = 0;
     if let Ok(rd) = std::fs::read_dir(path) {
         for entry in rd.flatten() {
+            let p = entry.path();
+            if excluded.contains(&p) {
+                continue;
+            }
             // file_type() no sigue symlinks/junctions (a diferencia de p.is_dir()),
             // evitando recursión infinita en ciclos de directorios.
             let file_type = match entry.file_type() {
@@ -132,9 +148,8 @@ fn count_files(path: &Path, filters: &[String]) -> usize {
             if file_type.is_symlink() {
                 continue;
             }
-            let p = entry.path();
             if file_type.is_dir() {
-                count += count_files(&p, filters);
+                count += count_files(&p, filters, excluded);
             } else if filters.is_empty() {
                 count += 1;
             } else if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
