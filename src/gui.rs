@@ -411,20 +411,34 @@ impl App {
                 });
                 ui.add_space(6.0);
 
-                // ProgressBar SIN desired_width: egui ajusta automáticamente
-                // y evitamos cualquier problema de cálculo de ancho.
-                let bar = egui::ProgressBar::new(frac.clamp(0.0, 1.0))
-                    .show_percentage()
-                    .animate(self.status == Status::Running);
-                ui.add(bar);
+                if total > 0 {
+                    // ProgressBar SIN desired_width: egui ajusta automáticamente
+                    // y evitamos cualquier problema de cálculo de ancho.
+                    let bar = egui::ProgressBar::new(frac.clamp(0.0, 1.0))
+                        .show_percentage()
+                        .animate(self.status == Status::Running);
+                    ui.add(bar);
 
-                ui.add_space(4.0);
-                let label = if total > 0 {
-                    format!("{} / {} archivos procesados", done, total)
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(format!("{done} / {total} archivos procesados"))
+                            .color(MUTED)
+                            .size(11.0),
+                    );
                 } else {
-                    "Contando archivos…".to_string()
-                };
-                ui.label(egui::RichText::new(label).color(MUTED).size(11.0));
+                    // No hacemos una pasada previa solo para contar archivos
+                    // (duplicaría el I/O y casi duplicaría el tiempo total),
+                    // así que mientras se escanea no conocemos el total:
+                    // mostramos progreso indeterminado con un contador en vivo.
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(
+                            egui::RichText::new(format!("{done} archivos encontrados…"))
+                                .color(MUTED)
+                                .size(12.0),
+                        );
+                    });
+                }
             });
     }
 

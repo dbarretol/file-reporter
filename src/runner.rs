@@ -1,6 +1,6 @@
 use crate::{reporters, scanner};
 use anyhow::{bail, Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -82,18 +82,19 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     let cancel_flag = progress.as_ref().map(|p| &p.cancel);
     let skipped = AtomicUsize::new(0);
 
-    // Fase 1: contar archivos para estimar el progreso (rápido)
+    // No hacemos una pasada previa solo para contar archivos: eso implicaría
+    // leer el disco dos veces (una para contar, otra para construir el
+    // árbol), casi duplicando el tiempo total. El `total` de `Progress`
+    // queda en 0 ("desconocido") durante todo el escaneo; la GUI lo trata
+    // como progreso indeterminado y muestra el contador `done` en vivo. Al
+    // terminar, más abajo, `total` se fija al conteo final real.
     if let Some(p) = &progress {
-        let total = count_files(&cfg.input, &cfg.extensions, &excluded, cancel_flag);
-        p.total.store(total, Ordering::Relaxed);
         p.done.store(0, Ordering::Relaxed);
-    }
-    if is_cancelled(cancel_flag) {
-        bail!("Escaneo cancelado por el usuario");
+        p.total.store(0, Ordering::Relaxed);
     }
 
-    // Fase 2: construir árbol (aquí ocurre el I/O real; reportamos progreso
-    // granular archivo a archivo a medida que se procesa cada uno)
+    // Única pasada por el disco: aquí ocurre todo el I/O real. Reportamos
+    // progreso granular archivo a archivo a medida que se procesa cada uno.
     let tree = scanner::build_tree(
         &cfg.input,
         &cfg.extensions,
@@ -152,44 +153,3 @@ fn is_cancelled(cancel: Option<&AtomicBool>) -> bool {
     cancel.is_some_and(|c| c.load(Ordering::Relaxed))
 }
 
-/// Cuenta archivos rápidamente (sin leer metadatos completos) para el ETA.
-/// Se detiene (conteo parcial) en cuanto se pide cancelar; `run` verifica
-/// la bandera por su cuenta y descarta el resultado si fue cancelado.
-fn count_files(
-    path: &Path,
-    filters: &[String],
-    excluded: &[PathBuf],
-    cancel: Option<&AtomicBool>,
-) -> usize {
-    let mut count = 0;
-    if let Ok(rd) = std::fs::read_dir(path) {
-        for entry in rd.flatten() {
-            if is_cancelled(cancel) {
-                break;
-            }
-            let p = entry.path();
-            if excluded.contains(&p) {
-                continue;
-            }
-            // file_type() no sigue symlinks/junctions (a diferencia de p.is_dir()),
-            // evitando recursión infinita en ciclos de directorios.
-            let file_type = match entry.file_type() {
-                Ok(ft) => ft,
-                Err(_) => continue,
-            };
-            if file_type.is_symlink() {
-                continue;
-            }
-            if file_type.is_dir() {
-                count += count_files(&p, filters, excluded, cancel);
-            } else if filters.is_empty() {
-                count += 1;
-            } else if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                if filters.iter().any(|f| f.eq_ignore_ascii_case(ext)) {
-                    count += 1;
-                }
-            }
-        }
-    }
-    count
-}

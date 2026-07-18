@@ -125,8 +125,8 @@ pub fn build_tree(
             .to_lowercase();
 
         // Reportamos progreso aquí (durante el I/O real), no al aplanar el árbol.
-        // Solo contamos archivos que pasarán el filtro, para ser consistentes con
-        // el pre-conteo de `count_files`.
+        // Solo contamos archivos que pasarán el filtro de extensión, para que
+        // el contador refleje lo que terminará en el reporte.
         let passes_filter =
             filters.is_empty() || filters.iter().any(|f| f.eq_ignore_ascii_case(&extension));
         if passes_filter {
