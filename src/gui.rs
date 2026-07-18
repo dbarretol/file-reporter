@@ -58,6 +58,7 @@ struct App {
     progress: Option<Arc<Progress>>,
     rx: Option<Receiver<WorkerMsg>>,
     started_at: Option<Instant>,
+    finished_at: Option<Instant>,
     summary: Option<RunSummary>,
     error: Option<String>,
 }
@@ -95,10 +96,12 @@ impl eframe::App for App {
                     WorkerMsg::Done(s) => {
                         self.summary = Some(s);
                         self.status = Status::Done;
+                        self.finished_at = Some(Instant::now());
                     }
                     WorkerMsg::Failed(e) => {
                         self.error = Some(e);
                         self.status = Status::Failed;
+                        self.finished_at = Some(Instant::now());
                     }
                 }
             }
@@ -301,6 +304,8 @@ impl App {
                 self.summary = None;
                 self.error = None;
                 self.progress = None;
+                self.started_at = None;
+                self.finished_at = None;
                 self.status = Status::Idle;
             }
         });
@@ -425,6 +430,7 @@ impl App {
         self.error = None;
         self.status = Status::Running;
         self.started_at = Some(Instant::now());
+        self.finished_at = None;
 
         let progress = Progress::new();
         self.progress = Some(progress.clone());
@@ -479,10 +485,19 @@ impl App {
         let Some(start) = self.started_at else {
             return "ETA: —".into();
         };
+        // Congelamos el tiempo total en cuanto el worker termina (Done/Failed),
+        // en vez de recalcular `start.elapsed()` en cada repaint (que seguiría
+        // creciendo aunque el usuario mire la pantalla mucho después).
+        if let Some(finished) = self.finished_at {
+            return format!(
+                "⏱  Tiempo total: {}",
+                fmt_seconds(finished.duration_since(start).as_secs_f32())
+            );
+        }
         if fraction <= 0.001 {
             return "ETA: calculando…".into();
         }
-        if fraction >= 1.0 || self.status == Status::Done {
+        if fraction >= 1.0 {
             return format!(
                 "⏱  Tiempo total: {}",
                 fmt_seconds(start.elapsed().as_secs_f32())
