@@ -50,6 +50,12 @@ fn main() -> Result<()> {
     println!("   📄 Markdown: {}", summary.md_path.display());
     println!("   📄 JSON:     {}", summary.json_path.display());
     println!("\n📊 Archivos procesados: {}", summary.files_count);
+    if summary.skipped_count > 0 {
+        println!(
+            "⚠️  {} elementos no accesibles fueron omitidos",
+            summary.skipped_count
+        );
+    }
     println!("⏱️  Tiempo: {:.2?}", start.elapsed());
 
     Ok(())

@@ -15,9 +15,10 @@ pub struct RunConfig {
 /// Reporte de progreso compartido entre el worker y la GUI.
 #[derive(Debug, Default)]
 pub struct Progress {
-    pub total: AtomicUsize, // archivos detectados (estimado)
-    pub done: AtomicUsize,  // archivos procesados
-    pub cancel: AtomicBool, // la GUI la pone en true para pedir cancelación
+    pub total: AtomicUsize,   // archivos detectados (estimado)
+    pub done: AtomicUsize,    // archivos procesados
+    pub cancel: AtomicBool,   // la GUI la pone en true para pedir cancelación
+    pub skipped: AtomicUsize, // carpetas/archivos que no se pudieron leer
 }
 
 impl Progress {
@@ -49,6 +50,9 @@ pub struct RunSummary {
     pub md_path: PathBuf,
     pub json_path: PathBuf,
     pub files_count: usize,
+    /// Carpetas/archivos que no se pudieron leer (permisos, etc.) y por lo
+    /// tanto no aparecen en el reporte, aunque existan en disco.
+    pub skipped_count: usize,
 }
 
 /// Ejecuta el proceso completo: escanear + generar 3 reportes.
@@ -76,6 +80,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     }
 
     let cancel_flag = progress.as_ref().map(|p| &p.cancel);
+    let skipped = AtomicUsize::new(0);
 
     // Fase 1: contar archivos para estimar el progreso (rápido)
     if let Some(p) = &progress {
@@ -95,6 +100,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         progress.as_ref().map(|p| &p.done),
         &excluded,
         cancel_flag,
+        Some(&skipped),
     )
     .context("Error al construir el árbol de directorios")?;
     if is_cancelled(cancel_flag) {
@@ -127,11 +133,17 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     reporters::markdown::write_markdown(&tree, &md_path)?;
     reporters::json::write_json(&tree, &json_path)?;
 
+    let skipped_count = skipped.load(Ordering::Relaxed);
+    if let Some(p) = &progress {
+        p.skipped.store(skipped_count, Ordering::Relaxed);
+    }
+
     Ok(RunSummary {
         csv_path,
         md_path,
         json_path,
         files_count: records.len(),
+        skipped_count,
     })
 }
 

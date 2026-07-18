@@ -26,12 +26,18 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
 ///
 /// Si se pasa `cancel` y está en `true`, se aborta el recorrido devolviendo
 /// error en vez de seguir leyendo disco (cancelación pedida por el usuario).
+///
+/// Si se pasa `skipped`, se incrementa por cada carpeta o archivo que no se
+/// pudo leer (permisos, entrada corrupta, etc. — no por symlinks omitidos
+/// ni por cancelación, que son casos intencionales, no fallos), para que el
+/// resultado final pueda avisar de que el reporte quedó incompleto.
 pub fn build_tree(
     path: &Path,
     filters: &[String],
     counter: Option<&AtomicUsize>,
     excluded: &[PathBuf],
     cancel: Option<&AtomicBool>,
+    skipped: Option<&AtomicUsize>,
 ) -> Result<Node> {
     if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
         bail!("Escaneo cancelado");
@@ -39,8 +45,16 @@ pub fn build_tree(
 
     // symlink_metadata (a diferencia de metadata) no sigue enlaces simbólicos
     // ni junctions de Windows, evitando recursión infinita en ciclos.
-    let metadata = fs::symlink_metadata(path)
-        .with_context(|| format!("No se pudo leer metadatos de: {}", path.display()))?;
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) => {
+            if let Some(s) = skipped {
+                s.fetch_add(1, Ordering::Relaxed);
+            }
+            return Err(e)
+                .with_context(|| format!("No se pudo leer metadatos de: {}", path.display()));
+        }
+    };
 
     if metadata.file_type().is_symlink() {
         bail!("Enlace simbólico omitido: {}", path.display());
@@ -55,16 +69,31 @@ pub fn build_tree(
         // Recolectamos rutas hijas, omitiendo las excluidas (reportes propios)
         let entries: Vec<PathBuf> = match fs::read_dir(path) {
             Ok(rd) => rd
-                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter_map(|e| match e {
+                    Ok(entry) => Some(entry.path()),
+                    Err(_) => {
+                        if let Some(s) = skipped {
+                            s.fetch_add(1, Ordering::Relaxed);
+                        }
+                        None
+                    }
+                })
                 .filter(|p| !excluded.contains(p))
                 .collect(),
-            Err(_) => Vec::new(), // sin permisos -> directorio vacío
+            Err(_) => {
+                // sin permisos -> no podemos listar el contenido; queda como
+                // carpeta vacía en el árbol, pero contamos la pérdida.
+                if let Some(s) = skipped {
+                    s.fetch_add(1, Ordering::Relaxed);
+                }
+                Vec::new()
+            }
         };
 
         // Procesamos hijos en paralelo
         let mut children: Vec<Node> = entries
             .par_iter()
-            .filter_map(|p| build_tree(p, filters, counter, excluded, cancel).ok())
+            .filter_map(|p| build_tree(p, filters, counter, excluded, cancel, skipped).ok())
             .filter(|n| match n {
                 // Conservamos archivos que pasen el filtro
                 Node::File { extension, .. } => {

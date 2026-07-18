@@ -84,6 +84,7 @@ enum WorkerMsg {
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(70, 130, 220);
 const SUCCESS: egui::Color32 = egui::Color32::from_rgb(46, 160, 67);
 const ERROR: egui::Color32 = egui::Color32::from_rgb(220, 70, 70);
+const WARNING: egui::Color32 = egui::Color32::from_rgb(210, 150, 40);
 const MUTED: egui::Color32 = egui::Color32::from_rgb(150, 150, 150);
 
 impl eframe::App for App {
@@ -450,6 +451,15 @@ impl App {
                             "📊 Total de archivos procesados: {}",
                             s.files_count
                         ));
+                        if s.skipped_count > 0 {
+                            ui.colored_label(
+                                WARNING,
+                                format!(
+                                    "⚠ {} elementos no accesibles fueron omitidos",
+                                    s.skipped_count
+                                ),
+                            );
+                        }
                         ui.add_space(8.0);
 
                         // Tabla de archivos generados
