@@ -99,6 +99,12 @@ Aparecerá una ventana donde podrás:
 | `-h`, `--help` | Muestra la ayuda | — |
 | `-V`, `--version` | Muestra la versión | — |
 
+> ⚠️ **Semántica de extensiones:** el filtro usa solo la última parte del nombre tras el
+> **último** punto. Para `foo.tar.gz` la extensión es `gz`, no `tar.gz` — filtrar por `tar`
+> no lo incluirá. Los archivos sin ningún punto en el nombre (`LICENSE`, `Makefile`, etc.)
+> no tienen extensión: quedan **excluidos** de cualquier filtro no vacío, aunque sí aparecen
+> cuando el filtro está vacío (se incluye todo).
+
 ---
 
 ## 📁 Archivos generados
@@ -113,13 +119,21 @@ Tabla plana con un registro por archivo, ideal para abrir en Excel o procesar co
 |-------|-------------|
 | `name` | Nombre del archivo (sin extensión) |
 | `extension` | Extensión (sin punto) |
-| `size_mb` | Tamaño en MB con 3 decimales |
+| `size_mb` | Tamaño en MB con 3 decimales (muestra "0.0" para archivos <524 bytes) |
+| `size_bytes` | Tamaño exacto en bytes, para ordenar/sumar sin perder precisión |
 | `created` | Fecha de creación (DD/MM/AAAA) |
 | `modified` | Fecha de última modificación (DD/MM/AAAA) |
+| `created_iso` | Fecha y hora de creación en ISO-8601 (`2024-03-15T14:23:01+00:00`) |
+| `modified_iso` | Fecha y hora de modificación en ISO-8601 |
 | `directory` | Ruta del directorio padre |
 | `full_path` | Ruta completa del archivo |
 
 > 💡 **Compatible con Excel:** UTF-8 con BOM y separador `;` para evitar problemas de codificación y alineación de columnas.
+>
+> 📅 **Sobre las fechas:** `created`/`modified` usan `DD/MM/AAAA` porque es el formato que
+> Excel reconoce sin configuración adicional, pero como texto no ordena cronológicamente y
+> descarta la hora. Las columnas `*_iso` llevan fecha+hora completas en un formato que sí
+> ordena como texto y es estándar para procesar con scripts.
 
 ### `report.md`
 
@@ -153,6 +167,7 @@ Estructura jerárquica completa, útil para automatización e integraciones:
       "type": "file",
       "name": "documento.pdf",
       "size_mb": 1.234,
+      "size_bytes": 1294237,
       "extension": "pdf",
       "created": "2024-03-15T14:23:01Z",
       "modified": "2024-03-15T14:23:01Z"
