@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::SystemTime;
 
 /// Convierte SystemTime a DateTime<Utc> de forma segura.
@@ -23,12 +23,20 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
 /// `excluded` son rutas exactas (típicamente los reportes de la carpeta de
 /// salida) que se omiten del escaneo para que una corrida no se incluya a
 /// sí misma ni a la anterior.
+///
+/// Si se pasa `cancel` y está en `true`, se aborta el recorrido devolviendo
+/// error en vez de seguir leyendo disco (cancelación pedida por el usuario).
 pub fn build_tree(
     path: &Path,
     filters: &[String],
     counter: Option<&AtomicUsize>,
     excluded: &[PathBuf],
+    cancel: Option<&AtomicBool>,
 ) -> Result<Node> {
+    if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+        bail!("Escaneo cancelado");
+    }
+
     // symlink_metadata (a diferencia de metadata) no sigue enlaces simbólicos
     // ni junctions de Windows, evitando recursión infinita en ciclos.
     let metadata = fs::symlink_metadata(path)
@@ -56,7 +64,7 @@ pub fn build_tree(
         // Procesamos hijos en paralelo
         let mut children: Vec<Node> = entries
             .par_iter()
-            .filter_map(|p| build_tree(p, filters, counter, excluded).ok())
+            .filter_map(|p| build_tree(p, filters, counter, excluded, cancel).ok())
             .filter(|n| match n {
                 // Conservamos archivos que pasen el filtro
                 Node::File { extension, .. } => {

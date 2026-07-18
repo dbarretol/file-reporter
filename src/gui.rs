@@ -281,6 +281,24 @@ impl App {
                 self.start_run();
             }
 
+            // Botón de cancelación: solo visible mientras hay un escaneo en curso.
+            if self.status == Status::Running {
+                let cancel_btn = egui::Button::new(
+                    egui::RichText::new("⏹  Cancelar")
+                        .size(14.0)
+                        .strong()
+                        .color(egui::Color32::WHITE),
+                )
+                .fill(ERROR)
+                .min_size(egui::vec2(120.0, 36.0));
+
+                if ui.add(cancel_btn).clicked() {
+                    if let Some(p) = &self.progress {
+                        p.cancel.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
+
             // Botón secundario: limpiar
             let can_clear = self.status != Status::Running
                 && (!self.input_path.is_empty()

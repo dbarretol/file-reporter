@@ -17,7 +17,7 @@ pub struct RunConfig {
 pub struct Progress {
     pub total: AtomicUsize, // archivos detectados (estimado)
     pub done: AtomicUsize,  // archivos procesados
-    pub finished: AtomicBool,
+    pub cancel: AtomicBool, // la GUI la pone en true para pedir cancelación
 }
 
 impl Progress {
@@ -75,11 +75,16 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         excluded.push(cfg.output.clone());
     }
 
+    let cancel_flag = progress.as_ref().map(|p| &p.cancel);
+
     // Fase 1: contar archivos para estimar el progreso (rápido)
     if let Some(p) = &progress {
-        let total = count_files(&cfg.input, &cfg.extensions, &excluded);
+        let total = count_files(&cfg.input, &cfg.extensions, &excluded, cancel_flag);
         p.total.store(total, Ordering::Relaxed);
         p.done.store(0, Ordering::Relaxed);
+    }
+    if is_cancelled(cancel_flag) {
+        bail!("Escaneo cancelado por el usuario");
     }
 
     // Fase 2: construir árbol (aquí ocurre el I/O real; reportamos progreso
@@ -89,8 +94,12 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         &cfg.extensions,
         progress.as_ref().map(|p| &p.done),
         &excluded,
+        cancel_flag,
     )
     .context("Error al construir el árbol de directorios")?;
+    if is_cancelled(cancel_flag) {
+        bail!("Escaneo cancelado por el usuario");
+    }
 
     // Fase 3: aplanar a registros para CSV (operación en memoria, sin I/O)
     let mut records = Vec::new();
@@ -118,10 +127,6 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     reporters::markdown::write_markdown(&tree, &md_path)?;
     reporters::json::write_json(&tree, &json_path)?;
 
-    if let Some(p) = &progress {
-        p.finished.store(true, Ordering::Relaxed);
-    }
-
     Ok(RunSummary {
         csv_path,
         md_path,
@@ -130,11 +135,26 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     })
 }
 
+/// `true` si se pidió cancelar el escaneo en curso.
+fn is_cancelled(cancel: Option<&AtomicBool>) -> bool {
+    cancel.is_some_and(|c| c.load(Ordering::Relaxed))
+}
+
 /// Cuenta archivos rápidamente (sin leer metadatos completos) para el ETA.
-fn count_files(path: &Path, filters: &[String], excluded: &[PathBuf]) -> usize {
+/// Se detiene (conteo parcial) en cuanto se pide cancelar; `run` verifica
+/// la bandera por su cuenta y descarta el resultado si fue cancelado.
+fn count_files(
+    path: &Path,
+    filters: &[String],
+    excluded: &[PathBuf],
+    cancel: Option<&AtomicBool>,
+) -> usize {
     let mut count = 0;
     if let Ok(rd) = std::fs::read_dir(path) {
         for entry in rd.flatten() {
+            if is_cancelled(cancel) {
+                break;
+            }
             let p = entry.path();
             if excluded.contains(&p) {
                 continue;
@@ -149,7 +169,7 @@ fn count_files(path: &Path, filters: &[String], excluded: &[PathBuf]) -> usize {
                 continue;
             }
             if file_type.is_dir() {
-                count += count_files(&p, filters, excluded);
+                count += count_files(&p, filters, excluded, cancel);
             } else if filters.is_empty() {
                 count += 1;
             } else if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
