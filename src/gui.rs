@@ -65,6 +65,11 @@ struct App {
 
     // Corrida a la espera de confirmación de sobrescritura (ver `request_run`).
     pending_confirm: Option<RunConfig>,
+
+    /// Error de una acción puntual de UI (p. ej. "Abrir carpeta" falló al
+    /// lanzar el explorador). Se muestra en la barra de estado sin tocar
+    /// `status`/`error`, que son del resultado del escaneo en sí.
+    ui_error: Option<String>,
 }
 
 /// Único subconjunto de `App` que se persiste entre sesiones (`eframe`
@@ -172,11 +177,17 @@ impl eframe::App for App {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(12.0);
-                    let (icon, text, color) = match self.status {
-                        Status::Idle => ("⚪", "Listo", MUTED),
-                        Status::Running => ("🔵", "Procesando…", ACCENT),
-                        Status::Done => ("🟢", "Completado", SUCCESS),
-                        Status::Failed => ("🔴", "Error", ERROR),
+                    // Un error de una acción puntual (p. ej. "Abrir carpeta"
+                    // falló) tiene prioridad sobre el estado general.
+                    let (icon, text, color) = if let Some(err) = &self.ui_error {
+                        ("⚠", err.as_str(), ERROR)
+                    } else {
+                        match self.status {
+                            Status::Idle => ("⚪", "Listo", MUTED),
+                            Status::Running => ("🔵", "Procesando…", ACCENT),
+                            Status::Done => ("🟢", "Completado", SUCCESS),
+                            Status::Failed => ("🔴", "Error", ERROR),
+                        }
                     };
                     ui.colored_label(color, icon);
                     ui.colored_label(color, text);
@@ -461,6 +472,7 @@ impl App {
                 self.pending_confirm = None;
                 self.started_at = None;
                 self.finished_at = None;
+                self.ui_error = None;
                 self.status = Status::Idle;
             }
         });
@@ -522,10 +534,11 @@ impl App {
     }
 
     /// ─── Sección: Resultados o error ─────────────────────────────
-    fn render_results(&self, ui: &mut egui::Ui) {
+    fn render_results(&mut self, ui: &mut egui::Ui) {
         match self.status {
             Status::Done => {
                 let Some(s) = &self.summary else { return };
+                let mut open_result: Option<Result<(), String>> = None;
 
                 egui::Frame::group(ui.style())
                     .inner_margin(egui::Margin::same(12.0))
@@ -568,18 +581,28 @@ impl App {
                                 )
                                 .clicked()
                             {
-                                if let Some(parent) = s.csv_path.parent() {
-                                    let _ = open_in_explorer(parent);
-                                }
+                                // /select, abre el Explorador en la carpeta
+                                // contenedora con el CSV ya resaltado.
+                                open_result = Some(
+                                    open_selecting(&s.csv_path)
+                                        .map_err(|e| format!("No se pudo abrir la carpeta: {e}")),
+                                );
                             }
                             if ui
                                 .button(egui::RichText::new("📄  Abrir CSV").size(12.0))
                                 .clicked()
                             {
-                                let _ = open_in_explorer(&s.csv_path);
+                                open_result = Some(
+                                    open_in_explorer(&s.csv_path)
+                                        .map_err(|e| format!("No se pudo abrir el CSV: {e}")),
+                                );
                             }
                         });
                     });
+
+                if let Some(result) = open_result {
+                    self.ui_error = result.err();
+                }
             }
             Status::Failed => {
                 let Some(e) = &self.error else { return };
@@ -642,6 +665,7 @@ impl App {
     fn start_run(&mut self, cfg: RunConfig) {
         self.summary = None;
         self.error = None;
+        self.ui_error = None;
         self.status = Status::Running;
         self.started_at = Some(Instant::now());
         self.finished_at = None;
@@ -821,4 +845,24 @@ fn open_in_explorer(path: &std::path::Path) -> std::io::Result<()> {
         .arg(path)
         .spawn()
         .map(|_| ())
+}
+
+/// Abre la carpeta contenedora de `path` con el archivo ya resaltado
+/// (en vez de una carpeta "en blanco" sin selección).
+#[cfg(target_os = "windows")]
+fn open_selecting(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("explorer")
+        .arg(format!("/select,{}", path.display()))
+        .spawn()
+        .map(|_| ())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_selecting(path: &std::path::Path) -> std::io::Result<()> {
+    // No hay un equivalente universal a "/select," fuera de Windows;
+    // abrimos la carpeta contenedora sin resaltar el archivo.
+    match path.parent() {
+        Some(parent) => open_in_explorer(parent),
+        None => open_in_explorer(path),
+    }
 }
