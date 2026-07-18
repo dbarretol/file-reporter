@@ -15,7 +15,11 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
 /// Construye recursivamente el árbol jerárquico.
 /// Los errores de lectura (permisos, etc.) se ignoran silenciosamente
 /// por archivo/carpeta para que el escaneo sea robusto.
-pub fn build_tree(path: &Path, filters: &[String]) -> Result<Node> {
+///
+/// Si se pasa un `counter`, se incrementa por cada archivo que pase el filtro
+/// de extensión, a medida que se procesa (durante el I/O real), para reportar
+/// progreso granular a la GUI.
+pub fn build_tree(path: &Path, filters: &[String], counter: Option<&AtomicUsize>) -> Result<Node> {
     // symlink_metadata (a diferencia de metadata) no sigue enlaces simbólicos
     // ni junctions de Windows, evitando recursión infinita en ciclos.
     let metadata = fs::symlink_metadata(path)
@@ -40,7 +44,7 @@ pub fn build_tree(path: &Path, filters: &[String]) -> Result<Node> {
         // Procesamos hijos en paralelo
         let mut children: Vec<Node> = entries
             .par_iter()
-            .filter_map(|p| build_tree(p, filters).ok())
+            .filter_map(|p| build_tree(p, filters, counter).ok())
             .filter(|n| match n {
                 // Conservamos archivos que pasen el filtro
                 Node::File { extension, .. } => {
@@ -71,6 +75,17 @@ pub fn build_tree(path: &Path, filters: &[String]) -> Result<Node> {
             .unwrap_or("")
             .to_lowercase();
 
+        // Reportamos progreso aquí (durante el I/O real), no al aplanar el árbol.
+        // Solo contamos archivos que pasarán el filtro, para ser consistentes con
+        // el pre-conteo de `count_files`.
+        let passes_filter =
+            filters.is_empty() || filters.iter().any(|f| f.eq_ignore_ascii_case(&extension));
+        if passes_filter {
+            if let Some(c) = counter {
+                c.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
         Ok(Node::File {
             name: name.clone(),
             path: path.to_path_buf(),
@@ -84,15 +99,13 @@ pub fn build_tree(path: &Path, filters: &[String]) -> Result<Node> {
 
 /// Aplana el árbol a una lista de FileRecord (para CSV).
 /// El árbol ya viene filtrado por extensión desde `build_tree`,
-/// así que aquí solo recorremos y serializamos.
-///
-/// Si se pasa un `counter`, se incrementa por cada archivo procesado
-/// para reportar progreso granular a la GUI.
-pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>, counter: Option<&AtomicUsize>) {
+/// así que aquí solo recorremos y serializamos. Es una operación en memoria
+/// (el árbol ya fue construido), por lo que no reporta progreso.
+pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>) {
     match node {
         Node::Directory { children, .. } => {
             for c in children {
-                flatten_to_records(c, out, counter);
+                flatten_to_records(c, out);
             }
         }
         Node::File {
@@ -126,11 +139,6 @@ pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>, counter: Optio
                 directory: dir,
                 full_path: path.display().to_string(),
             });
-
-            // Reportar progreso si hay contador
-            if let Some(c) = counter {
-                c.fetch_add(1, Ordering::Relaxed);
-            }
         }
     }
 }

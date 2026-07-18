@@ -75,13 +75,18 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         p.done.store(0, Ordering::Relaxed);
     }
 
-    // Fase 2: construir árbol
-    let tree = scanner::build_tree(&cfg.input, &cfg.extensions)
-        .context("Error al construir el árbol de directorios")?;
+    // Fase 2: construir árbol (aquí ocurre el I/O real; reportamos progreso
+    // granular archivo a archivo a medida que se procesa cada uno)
+    let tree = scanner::build_tree(
+        &cfg.input,
+        &cfg.extensions,
+        progress.as_ref().map(|p| &p.done),
+    )
+    .context("Error al construir el árbol de directorios")?;
 
-    // Fase 3: aplanar a registros para CSV (con progreso granular archivo a archivo)
+    // Fase 3: aplanar a registros para CSV (operación en memoria, sin I/O)
     let mut records = Vec::new();
-    scanner::flatten_to_records(&tree, &mut records, progress.as_ref().map(|p| &p.done));
+    scanner::flatten_to_records(&tree, &mut records);
 
     // Asegurar que el contador refleje la realidad final
     if let Some(p) = &progress {
