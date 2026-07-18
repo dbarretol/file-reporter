@@ -266,7 +266,8 @@ impl App {
     /// ─── Sección: Botones de acción ──────────────────────────────
     fn render_actions(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            let can_run = self.status != Status::Running && !self.input_path.trim().is_empty();
+            let can_run =
+                self.status != Status::Running && !clean_path_input(&self.input_path).is_empty();
 
             let run_btn = egui::Button::new(
                 egui::RichText::new("▶  Generar reportes")
@@ -451,11 +452,13 @@ impl App {
         let (tx, rx) = mpsc::channel::<WorkerMsg>();
         self.rx = Some(rx);
 
-        let input = PathBuf::from(self.input_path.trim());
-        let output = if self.output_path.trim().is_empty() {
+        // "Copiar como ruta de acceso" de Windows pega la ruta entre comillas
+        // (p. ej. "C:\..."); las quitamos además del trim de espacios normal.
+        let input = PathBuf::from(clean_path_input(&self.input_path));
+        let output = if clean_path_input(&self.output_path).is_empty() {
             input.clone()
         } else {
-            PathBuf::from(self.output_path.trim())
+            PathBuf::from(clean_path_input(&self.output_path))
         };
         let extensions: Vec<String> = self
             .extensions
@@ -576,6 +579,12 @@ fn result_row(ui: &mut egui::Ui, label: &str, path: &std::path::Path) {
         ui.label(egui::RichText::new(display).monospace().size(11.0))
             .on_hover_text(&path_str);
     });
+}
+
+/// Limpia una ruta pegada por el usuario: quita espacios y, si vienen,
+/// las comillas que agrega "Copiar como ruta de acceso" de Windows.
+fn clean_path_input(s: &str) -> &str {
+    s.trim().trim_matches('"')
 }
 
 /// Trunca un string a `max_chars` caracteres (no bytes), prefijando "…"
