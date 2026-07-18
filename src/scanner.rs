@@ -195,3 +195,92 @@ pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn node_names(node: &Node) -> Vec<String> {
+        match node {
+            Node::Directory { children, .. } => {
+                children.iter().map(|c| c.name().to_string()).collect()
+            }
+            Node::File { .. } => vec![],
+        }
+    }
+
+    #[test]
+    fn build_tree_filters_by_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "hello").unwrap();
+        fs::write(dir.path().join("b.jpg"), "hello").unwrap();
+        fs::write(dir.path().join("c.TXT"), "hello").unwrap();
+
+        let filters = vec!["txt".to_string()];
+        let tree = build_tree(dir.path(), &filters, None, &[], None, None).unwrap();
+
+        let mut records = Vec::new();
+        flatten_to_records(&tree, &mut records);
+        let mut names: Vec<String> = records.iter().map(|r| r.name.clone()).collect();
+        names.sort();
+
+        // El filtro es case-insensitive: "c.TXT" también debe pasar.
+        assert_eq!(names, vec!["a".to_string(), "c".to_string()]);
+    }
+
+    #[test]
+    fn build_tree_drops_empty_dirs_after_filtering() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("only_jpgs");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("pic.jpg"), "x").unwrap();
+        fs::write(dir.path().join("doc.txt"), "x").unwrap();
+
+        let filters = vec!["txt".to_string()];
+        let tree = build_tree(dir.path(), &filters, None, &[], None, None).unwrap();
+
+        // "only_jpgs" queda vacía tras filtrar por txt, así que se descarta
+        // del árbol en vez de aparecer como carpeta sin contenido.
+        assert_eq!(node_names(&tree), vec!["doc.txt".to_string()]);
+    }
+
+    #[test]
+    fn build_tree_sorts_dirs_before_files_alphabetically() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("zeta.txt"), "x").unwrap();
+        fs::create_dir(dir.path().join("alpha_dir")).unwrap();
+        fs::write(dir.path().join("alpha_dir").join("inner.txt"), "x").unwrap();
+        fs::write(dir.path().join("beta.txt"), "x").unwrap();
+
+        let tree = build_tree(dir.path(), &[], None, &[], None, None).unwrap();
+        assert_eq!(
+            node_names(&tree),
+            vec![
+                "alpha_dir".to_string(),
+                "beta.txt".to_string(),
+                "zeta.txt".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn flatten_to_records_counts_and_fills_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("one.txt"), "12345").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("sub").join("two.txt"), "abcdefgh").unwrap();
+
+        let tree = build_tree(dir.path(), &[], None, &[], None, None).unwrap();
+        let mut records = Vec::new();
+        flatten_to_records(&tree, &mut records);
+
+        assert_eq!(records.len(), 2);
+        let one = records.iter().find(|r| r.name == "one").unwrap();
+        assert_eq!(one.extension, "txt");
+        assert_eq!(one.size_bytes, 5);
+        let two = records.iter().find(|r| r.name == "two").unwrap();
+        assert_eq!(two.size_bytes, 8);
+        assert!(two.full_path.ends_with("two.txt"));
+    }
+}

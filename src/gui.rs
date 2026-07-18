@@ -940,3 +940,44 @@ fn open_selecting(path: &std::path::Path) -> std::io::Result<()> {
         None => open_in_explorer(path),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_path_display_noop_when_short_enough() {
+        assert_eq!(truncate_path_display("short", 10), "short");
+        assert_eq!(truncate_path_display("exact", 5), "exact");
+    }
+
+    #[test]
+    fn truncate_path_display_truncates_from_the_front() {
+        let s = "C:\\Users\\someone\\Documents\\file.txt";
+        let out = truncate_path_display(s, 10);
+        assert_eq!(out.chars().count(), 10);
+        assert!(out.starts_with('…'));
+        let tail: String = out.chars().skip(1).collect();
+        assert!(s.ends_with(&tail));
+    }
+
+    #[test]
+    fn truncate_path_display_respects_utf8_char_boundaries() {
+        // Cadena con multibyte (acentos, emoji) cerca del punto de corte:
+        // debe truncar por caracteres, no por bytes, sin panickear.
+        let s = "café_😀_carpeta_con_ñ_y_más_texto.txt";
+        let out = truncate_path_display(s, 12);
+        assert_eq!(out.chars().count(), 12);
+        assert!(out.starts_with('…'));
+    }
+
+    #[test]
+    fn fmt_seconds_boundaries() {
+        assert_eq!(fmt_seconds(0.0), "0s");
+        assert_eq!(fmt_seconds(59.0), "59s");
+        assert_eq!(fmt_seconds(60.0), "1m 00s");
+        assert_eq!(fmt_seconds(3599.0), "59m 59s");
+        assert_eq!(fmt_seconds(3600.0), "1h 00m 00s");
+        assert_eq!(fmt_seconds(3661.0), "1h 01m 01s");
+    }
+}

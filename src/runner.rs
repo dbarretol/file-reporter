@@ -161,4 +161,60 @@ fn is_cancelled(cancel: Option<&AtomicBool>) -> bool {
     cancel.is_some_and(|c| c.load(Ordering::Relaxed))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn run_fails_on_nonexistent_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = RunConfig {
+            input: dir.path().join("no_existe"),
+            output: dir.path().join("out"),
+            extensions: vec![],
+        };
+        let err = run(&cfg, None).unwrap_err();
+        assert!(err.to_string().contains("no existe"));
+    }
+
+    #[test]
+    fn run_fails_when_input_is_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("archivo.txt");
+        fs::write(&file_path, "x").unwrap();
+        let cfg = RunConfig {
+            input: file_path,
+            output: dir.path().join("out"),
+            extensions: vec![],
+        };
+        let err = run(&cfg, None).unwrap_err();
+        assert!(err.to_string().contains("no es un directorio"));
+    }
+
+    #[test]
+    fn run_happy_path_generates_three_reports() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        let output = dir.path().join("out");
+        fs::create_dir(&input).unwrap();
+        fs::write(input.join("a.txt"), "hello").unwrap();
+        fs::write(input.join("b.txt"), "world").unwrap();
+
+        let cfg = RunConfig {
+            input,
+            output: output.clone(),
+            extensions: vec![],
+        };
+        let summary = run(&cfg, None).unwrap();
+
+        assert_eq!(summary.files_count, 2);
+        assert_eq!(summary.skipped_count, 0);
+        assert!(summary.csv_path.exists());
+        assert!(summary.md_path.exists());
+        assert!(summary.json_path.exists());
+        assert_eq!(summary.csv_path, output.join("report.csv"));
+    }
+}
+
 
