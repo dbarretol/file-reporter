@@ -145,6 +145,7 @@ impl eframe::App for App {
 
         self.handle_dropped_files(ctx);
         self.render_drop_hint(ctx);
+        self.handle_enter_to_run(ctx);
         self.render_overwrite_confirm(ctx);
 
         // Top bar con título
@@ -323,6 +324,24 @@ impl App {
     /// Arrastrar una carpeta a la ventana rellena "Carpeta a escanear"
     /// (el gesto más natural para esta app). Se ignora mientras hay un
     /// escaneo en curso, igual que el resto del formulario.
+    /// Si el formulario tiene lo mínimo para lanzar un escaneo (no hay uno en
+    /// curso, no hay un diálogo de confirmación pendiente, y hay una ruta de
+    /// entrada). Compartido entre el botón "Generar reportes" y Enter.
+    fn can_run(&self) -> bool {
+        self.status != Status::Running
+            && self.pending_confirm.is_none()
+            && !clean_path_input(&self.input_path).is_empty()
+    }
+
+    /// Enter en cualquier campo del formulario dispara "Generar reportes",
+    /// igual que pulsar el botón, siempre que el formulario sea válido.
+    fn handle_enter_to_run(&mut self, ctx: &egui::Context) {
+        let enter_pressed = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+        if enter_pressed && self.can_run() {
+            self.request_run();
+        }
+    }
+
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
         if self.status == Status::Running {
             return;
@@ -416,9 +435,7 @@ impl App {
     /// ─── Sección: Botones de acción ──────────────────────────────
     fn render_actions(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            let can_run = self.status != Status::Running
-                && self.pending_confirm.is_none()
-                && !clean_path_input(&self.input_path).is_empty();
+            let can_run = self.can_run();
 
             let run_btn = egui::Button::new(
                 egui::RichText::new("▶  Generar reportes")
