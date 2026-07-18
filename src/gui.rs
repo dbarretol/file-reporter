@@ -325,6 +325,12 @@ impl App {
                     egui::TextEdit::singleline(&mut self.extensions)
                         .hint_text("pdf, docx, jpg  (vacío = todas)")
                         .desired_width(ext_width),
+                )
+                .on_hover_text(
+                    "Solo la última parte tras el último punto cuenta como extensión: \
+                     \"foo.tar.gz\" se filtra con \"gz\", no con \"tar.gz\". \
+                     Los archivos sin punto en el nombre (p. ej. \"LICENSE\", \"Makefile\") \
+                     no tienen extensión y quedan fuera de cualquier filtro no vacío.",
                 );
 
                 // Sugerencias rápidas
