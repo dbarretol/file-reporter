@@ -118,8 +118,17 @@ fn count_files(path: &Path, filters: &[String]) -> usize {
     let mut count = 0;
     if let Ok(rd) = std::fs::read_dir(path) {
         for entry in rd.flatten() {
+            // file_type() no sigue symlinks/junctions (a diferencia de p.is_dir()),
+            // evitando recursión infinita en ciclos de directorios.
+            let file_type = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+            if file_type.is_symlink() {
+                continue;
+            }
             let p = entry.path();
-            if p.is_dir() {
+            if file_type.is_dir() {
                 count += count_files(&p, filters);
             } else if filters.is_empty() {
                 count += 1;

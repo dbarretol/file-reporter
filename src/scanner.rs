@@ -1,5 +1,5 @@
 use crate::models::{FileRecord, Node};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 use std::fs;
@@ -16,8 +16,14 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
 /// Los errores de lectura (permisos, etc.) se ignoran silenciosamente
 /// por archivo/carpeta para que el escaneo sea robusto.
 pub fn build_tree(path: &Path, filters: &[String]) -> Result<Node> {
-    let metadata = fs::metadata(path)
+    // symlink_metadata (a diferencia de metadata) no sigue enlaces simbólicos
+    // ni junctions de Windows, evitando recursión infinita en ciclos.
+    let metadata = fs::symlink_metadata(path)
         .with_context(|| format!("No se pudo leer metadatos de: {}", path.display()))?;
+
+    if metadata.file_type().is_symlink() {
+        bail!("Enlace simbólico omitido: {}", path.display());
+    }
 
     let name = path
         .file_name()
