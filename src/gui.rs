@@ -61,6 +61,9 @@ struct App {
     finished_at: Option<Instant>,
     summary: Option<RunSummary>,
     error: Option<String>,
+
+    // Corrida a la espera de confirmación de sobrescritura (ver `request_run`).
+    pending_confirm: Option<RunConfig>,
 }
 
 #[derive(Default, PartialEq)]
@@ -106,6 +109,8 @@ impl eframe::App for App {
                 }
             }
         }
+
+        self.render_overwrite_confirm(ctx);
 
         // Top bar con título
         egui::TopBottomPanel::top("header")
@@ -263,11 +268,66 @@ impl App {
             });
     }
 
+    /// ─── Diálogo: confirmar sobrescritura de reportes existentes ──
+    fn render_overwrite_confirm(&mut self, ctx: &egui::Context) {
+        let Some(cfg) = &self.pending_confirm else {
+            return;
+        };
+        let files = existing_reports(cfg);
+
+        let mut confirmed = false;
+        let mut cancelled = false;
+
+        egui::Window::new("⚠  Sobrescribir reportes existentes")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.label("Ya existen reportes de una corrida anterior en la carpeta de salida:");
+                ui.add_space(6.0);
+                for f in &files {
+                    ui.label(
+                        egui::RichText::new(format!("• {}", f.display()))
+                            .monospace()
+                            .size(11.0),
+                    );
+                }
+                ui.add_space(10.0);
+                ui.label("¿Deseas sobrescribirlos?");
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("Sobrescribir").color(egui::Color32::WHITE),
+                            )
+                            .fill(ERROR),
+                        )
+                        .clicked()
+                    {
+                        confirmed = true;
+                    }
+                    if ui.button("Cancelar").clicked() {
+                        cancelled = true;
+                    }
+                });
+            });
+
+        if confirmed {
+            if let Some(cfg) = self.pending_confirm.take() {
+                self.start_run(cfg);
+            }
+        } else if cancelled {
+            self.pending_confirm = None;
+        }
+    }
+
     /// ─── Sección: Botones de acción ──────────────────────────────
     fn render_actions(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            let can_run =
-                self.status != Status::Running && !clean_path_input(&self.input_path).is_empty();
+            let can_run = self.status != Status::Running
+                && self.pending_confirm.is_none()
+                && !clean_path_input(&self.input_path).is_empty();
 
             let run_btn = egui::Button::new(
                 egui::RichText::new("▶  Generar reportes")
@@ -279,7 +339,7 @@ impl App {
             .min_size(egui::vec2(180.0, 36.0));
 
             if ui.add_enabled(can_run, run_btn).clicked() {
-                self.start_run();
+                self.request_run();
             }
 
             // Botón de cancelación: solo visible mientras hay un escaneo en curso.
@@ -318,6 +378,7 @@ impl App {
                 self.summary = None;
                 self.error = None;
                 self.progress = None;
+                self.pending_confirm = None;
                 self.started_at = None;
                 self.finished_at = None;
                 self.status = Status::Idle;
@@ -439,19 +500,8 @@ impl App {
         }
     }
 
-    fn start_run(&mut self) {
-        self.summary = None;
-        self.error = None;
-        self.status = Status::Running;
-        self.started_at = Some(Instant::now());
-        self.finished_at = None;
-
-        let progress = Progress::new();
-        self.progress = Some(progress.clone());
-
-        let (tx, rx) = mpsc::channel::<WorkerMsg>();
-        self.rx = Some(rx);
-
+    /// Arma el `RunConfig` a partir de los campos del formulario.
+    fn build_cfg(&self) -> RunConfig {
         // "Copiar como ruta de acceso" de Windows pega la ruta entre comillas
         // (p. ej. "C:\..."); las quitamos además del trim de espacios normal.
         let input = PathBuf::from(clean_path_input(&self.input_path));
@@ -467,11 +517,37 @@ impl App {
             .filter(|s| !s.is_empty())
             .collect();
 
-        let cfg = RunConfig {
+        RunConfig {
             input,
             output,
             extensions,
-        };
+        }
+    }
+
+    /// Se llama al pulsar "Generar reportes". Si ya existen reportes de una
+    /// corrida anterior en la carpeta de salida, pide confirmación antes de
+    /// sobrescribirlos en vez de pisarlos en silencio.
+    fn request_run(&mut self) {
+        let cfg = self.build_cfg();
+        if existing_reports(&cfg).is_empty() {
+            self.start_run(cfg);
+        } else {
+            self.pending_confirm = Some(cfg);
+        }
+    }
+
+    fn start_run(&mut self, cfg: RunConfig) {
+        self.summary = None;
+        self.error = None;
+        self.status = Status::Running;
+        self.started_at = Some(Instant::now());
+        self.finished_at = None;
+
+        let progress = Progress::new();
+        self.progress = Some(progress.clone());
+
+        let (tx, rx) = mpsc::channel::<WorkerMsg>();
+        self.rx = Some(rx);
 
         // Worker en hilo separado. Capturamos panics para que nunca tumben la GUI.
         std::thread::spawn(move || {
@@ -585,6 +661,16 @@ fn result_row(ui: &mut egui::Ui, label: &str, path: &std::path::Path) {
 /// las comillas que agrega "Copiar como ruta de acceso" de Windows.
 fn clean_path_input(s: &str) -> &str {
     s.trim().trim_matches('"')
+}
+
+/// Reportes de una corrida anterior que ya existen en la carpeta de salida
+/// de `cfg` y que esta corrida sobrescribiría.
+fn existing_reports(cfg: &RunConfig) -> Vec<PathBuf> {
+    ["report.csv", "report.md", "report.json"]
+        .into_iter()
+        .map(|name| cfg.output.join(name))
+        .filter(|p| p.exists())
+        .collect()
 }
 
 /// Trunca un string a `max_chars` caracteres (no bytes), prefijando "…"
