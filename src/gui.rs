@@ -113,11 +113,41 @@ enum WorkerMsg {
 }
 
 // ─── Constantes de estilo ────────────────────────────────────────
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(70, 130, 220);
-const SUCCESS: egui::Color32 = egui::Color32::from_rgb(46, 160, 67);
-const ERROR: egui::Color32 = egui::Color32::from_rgb(220, 70, 70);
-const WARNING: egui::Color32 = egui::Color32::from_rgb(210, 150, 40);
-const MUTED: egui::Color32 = egui::Color32::from_rgb(150, 150, 150);
+// Tonos pensados para tema oscuro (el diseño original).
+const ACCENT_DARK: egui::Color32 = egui::Color32::from_rgb(70, 130, 220);
+const SUCCESS_DARK: egui::Color32 = egui::Color32::from_rgb(46, 160, 67);
+const ERROR_DARK: egui::Color32 = egui::Color32::from_rgb(220, 70, 70);
+const WARNING_DARK: egui::Color32 = egui::Color32::from_rgb(210, 150, 40);
+const MUTED_DARK: egui::Color32 = egui::Color32::from_rgb(150, 150, 150);
+
+// Variantes más oscuras/saturadas (~Tailwind 600-800) para tema claro: los
+// tonos de arriba, calibrados para fondo oscuro, quedan por debajo de 4.5:1
+// de contraste (WCAG AA para texto) sobre un fondo blanco/casi blanco.
+const ACCENT_LIGHT: egui::Color32 = egui::Color32::from_rgb(30, 64, 175);
+const SUCCESS_LIGHT: egui::Color32 = egui::Color32::from_rgb(21, 128, 61);
+const ERROR_LIGHT: egui::Color32 = egui::Color32::from_rgb(185, 28, 28);
+const WARNING_LIGHT: egui::Color32 = egui::Color32::from_rgb(180, 83, 9);
+const MUTED_LIGHT: egui::Color32 = egui::Color32::from_rgb(75, 85, 99);
+
+/// Elige la variante del color según el tema activo del sistema (egui sigue
+/// el tema del SO). Todas las funciones toman `&egui::Ui` porque cada sitio
+/// de uso ya tiene uno a mano — evita tener que enhebrar el tema como
+/// parámetro extra por todos los métodos `render_*`.
+fn accent_color(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode { ACCENT_DARK } else { ACCENT_LIGHT }
+}
+fn success_color(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode { SUCCESS_DARK } else { SUCCESS_LIGHT }
+}
+fn error_color(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode { ERROR_DARK } else { ERROR_LIGHT }
+}
+fn warning_color(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode { WARNING_DARK } else { WARNING_LIGHT }
+}
+fn muted_color(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode { MUTED_DARK } else { MUTED_LIGHT }
+}
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -165,7 +195,7 @@ impl eframe::App for App {
                             egui::RichText::new(
                                 "Genera reportes (CSV, Markdown, JSON) de la estructura de un directorio",
                             )
-                            .color(MUTED)
+                            .color(muted_color(ui))
                             .size(12.0),
                         );
                     });
@@ -181,13 +211,13 @@ impl eframe::App for App {
                     // Un error de una acción puntual (p. ej. "Abrir carpeta"
                     // falló) tiene prioridad sobre el estado general.
                     let (icon, text, color) = if let Some(err) = &self.ui_error {
-                        ("⚠", err.as_str(), ERROR)
+                        ("⚠", err.as_str(), error_color(ui))
                     } else {
                         match self.status {
-                            Status::Idle => ("⚪", "Listo", MUTED),
-                            Status::Running => ("🔵", self.running_phase_text(), ACCENT),
-                            Status::Done => ("🟢", "Completado", SUCCESS),
-                            Status::Failed => ("🔴", "Error", ERROR),
+                            Status::Idle => ("⚪", "Listo", muted_color(ui)),
+                            Status::Running => ("🔵", self.running_phase_text(), accent_color(ui)),
+                            Status::Done => ("🟢", "Completado", success_color(ui)),
+                            Status::Failed => ("🔴", "Error", error_color(ui)),
                         }
                     };
                     ui.colored_label(color, icon);
@@ -300,7 +330,7 @@ impl App {
                 // Sugerencias rápidas
                 ui.add_space(4.0);
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new("Sugerencias:").color(MUTED).size(11.0));
+                    ui.label(egui::RichText::new("Sugerencias:").color(muted_color(ui)).size(11.0));
                     for preset in [
                         "pdf, docx, xlsx",
                         "jpg, png, gif",
@@ -411,7 +441,7 @@ impl App {
                             egui::Button::new(
                                 egui::RichText::new("Sobrescribir").color(egui::Color32::WHITE),
                             )
-                            .fill(ERROR),
+                            .fill(ERROR_DARK),
                         )
                         .clicked()
                     {
@@ -443,7 +473,7 @@ impl App {
                     .strong()
                     .color(egui::Color32::WHITE),
             )
-            .fill(ACCENT)
+            .fill(ACCENT_DARK)
             .min_size(egui::vec2(180.0, 36.0));
 
             if ui.add_enabled(can_run, run_btn).clicked() {
@@ -458,7 +488,7 @@ impl App {
                         .strong()
                         .color(egui::Color32::WHITE),
                 )
-                .fill(ERROR)
+                .fill(ERROR_DARK)
                 .min_size(egui::vec2(120.0, 36.0));
 
                 if ui.add(cancel_btn).clicked() {
@@ -513,7 +543,7 @@ impl App {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             egui::RichText::new(self.compute_eta(frac))
-                                .color(MUTED)
+                                .color(muted_color(ui))
                                 .size(12.0),
                         );
                     });
@@ -528,7 +558,7 @@ impl App {
                         ui.spinner();
                         ui.label(
                             egui::RichText::new("Generando reportes…")
-                                .color(MUTED)
+                                .color(muted_color(ui))
                                 .size(12.0),
                         );
                     });
@@ -543,7 +573,7 @@ impl App {
                     ui.add_space(4.0);
                     ui.label(
                         egui::RichText::new(format!("{done} / {total} archivos procesados"))
-                            .color(MUTED)
+                            .color(muted_color(ui))
                             .size(11.0),
                     );
                 } else {
@@ -555,7 +585,7 @@ impl App {
                         ui.spinner();
                         ui.label(
                             egui::RichText::new(format!("{done} archivos encontrados…"))
-                                .color(MUTED)
+                                .color(muted_color(ui))
                                 .size(12.0),
                         );
                     });
@@ -588,12 +618,12 @@ impl App {
                     .inner_margin(egui::Margin::same(12.0))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.colored_label(SUCCESS, egui::RichText::new("✅").size(16.0));
+                            ui.colored_label(success_color(ui), egui::RichText::new("✅").size(16.0));
                             ui.label(
                                 egui::RichText::new("Reportes generados correctamente")
                                     .strong()
                                     .size(14.0)
-                                    .color(SUCCESS),
+                                    .color(success_color(ui)),
                             );
                         });
                         ui.add_space(6.0);
@@ -603,7 +633,7 @@ impl App {
                         ));
                         if s.skipped_count > 0 {
                             ui.colored_label(
-                                WARNING,
+                                warning_color(ui),
                                 format!(
                                     "⚠ {} elementos no accesibles fueron omitidos",
                                     s.skipped_count
@@ -655,11 +685,11 @@ impl App {
                     .fill(egui::Color32::from_rgba_unmultiplied(220, 70, 70, 20))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.colored_label(ERROR, egui::RichText::new("❌").size(16.0));
+                            ui.colored_label(error_color(ui), egui::RichText::new("❌").size(16.0));
                             ui.label(
                                 egui::RichText::new("Ha ocurrido un error")
                                     .strong()
-                                    .color(ERROR),
+                                    .color(error_color(ui)),
                             );
                         });
                         ui.add_space(4.0);
