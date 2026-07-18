@@ -8,6 +8,10 @@ pub struct FileRecord {
     pub name: String,
     pub extension: String,
     pub size_mb: f64,
+    /// Tamaño exacto en bytes. `size_mb` redondea a 3 decimales y muestra
+    /// "0.000" para archivos pequeños (<524 bytes); esta columna permite
+    /// ordenar y sumar tamaños con precisión sin perder esa información.
+    pub size_bytes: u64,
     pub created: String,
     pub modified: String,
     pub directory: String,
@@ -27,6 +31,7 @@ pub enum Node {
         name: String,
         path: PathBuf,
         size_mb: f64,
+        size_bytes: u64,
         extension: String,
         created: Option<DateTime<Utc>>,
         modified: Option<DateTime<Utc>>,

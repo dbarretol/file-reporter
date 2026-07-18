@@ -117,7 +117,8 @@ pub fn build_tree(
             children,
         })
     } else {
-        let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
+        let size_bytes = metadata.len();
+        let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
         let extension = path
             .extension()
             .and_then(|e| e.to_str())
@@ -139,6 +140,7 @@ pub fn build_tree(
             name: name.clone(),
             path: path.to_path_buf(),
             size_mb,
+            size_bytes,
             extension,
             created: metadata.created().ok().and_then(to_datetime),
             modified: metadata.modified().ok().and_then(to_datetime),
@@ -160,6 +162,7 @@ pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>) {
         Node::File {
             path,
             size_mb,
+            size_bytes,
             extension,
             created,
             modified,
@@ -178,6 +181,7 @@ pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>) {
                 name: stem,
                 extension: extension.clone(),
                 size_mb: (size_mb * 1000.0).round() / 1000.0, // 3 decimales
+                size_bytes: *size_bytes,
                 // Formato DD/MM/AAAA (solo fecha, sin hora)
                 created: created
                     .map(|d| d.format("%d/%m/%Y").to_string())
