@@ -23,3 +23,6 @@ tempfile = "3.10"
 [profile.release]
 opt-level = 3
 lto = true
+# No usar panic = "abort": rompería el catch_unwind del worker de la GUI
+# (src/gui.rs, start_run) que evita que un panic interno tumbe la app.
+strip = true
