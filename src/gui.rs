@@ -1,6 +1,7 @@
 use crate::runner::{self, Progress, RunConfig, RunSummary};
 use anyhow::Result;
 use eframe::egui;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver};
@@ -23,7 +24,7 @@ pub fn launch() -> Result<()> {
         Box::new(|cc| {
             // Estilo global más amigable
             setup_custom_style(&cc.egui_ctx);
-            Ok(Box::<App>::default())
+            Ok(Box::new(App::new(cc)))
         }),
     )
     .map_err(|e| anyhow::anyhow!("Error iniciando GUI: {e}"))
@@ -64,6 +65,32 @@ struct App {
 
     // Corrida a la espera de confirmación de sobrescritura (ver `request_run`).
     pending_confirm: Option<RunConfig>,
+}
+
+/// Único subconjunto de `App` que se persiste entre sesiones (`eframe`
+/// "persistence"): las rutas y extensiones tecleadas, no el estado de una
+/// corrida en curso.
+#[derive(Default, Serialize, Deserialize)]
+struct PersistedState {
+    input_path: String,
+    output_path: String,
+    extensions: String,
+}
+
+const PERSIST_KEY: &str = eframe::APP_KEY;
+
+impl App {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let mut app = App::default();
+        if let Some(storage) = cc.storage {
+            if let Some(state) = eframe::get_value::<PersistedState>(storage, PERSIST_KEY) {
+                app.input_path = state.input_path;
+                app.output_path = state.output_path;
+                app.extensions = state.extensions;
+            }
+        }
+        app
+    }
 }
 
 #[derive(Default, PartialEq)]
@@ -199,6 +226,17 @@ impl eframe::App for App {
                     });
             });
         });
+    }
+
+    /// Persiste las rutas y extensiones tecleadas (no el estado de una
+    /// corrida en curso) para restaurarlas en la próxima sesión.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        let state = PersistedState {
+            input_path: self.input_path.clone(),
+            output_path: self.output_path.clone(),
+            extensions: self.extensions.clone(),
+        };
+        eframe::set_value(storage, PERSIST_KEY, &state);
     }
 }
 
