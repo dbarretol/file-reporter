@@ -111,6 +111,8 @@ impl eframe::App for App {
             }
         }
 
+        self.handle_dropped_files(ctx);
+        self.render_drop_hint(ctx);
         self.render_overwrite_confirm(ctx);
 
         // Top bar con título
@@ -267,6 +269,45 @@ impl App {
                     }
                 });
             });
+    }
+
+    /// Arrastrar una carpeta a la ventana rellena "Carpeta a escanear"
+    /// (el gesto más natural para esta app). Se ignora mientras hay un
+    /// escaneo en curso, igual que el resto del formulario.
+    fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        if self.status == Status::Running {
+            return;
+        }
+        let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+        if let Some(path) = dropped.iter().find_map(|f| f.path.clone()) {
+            self.input_path = path.display().to_string();
+        }
+    }
+
+    /// Overlay mientras se arrastra un archivo/carpeta sobre la ventana, para
+    /// que quede claro que soltarlo ahí lo usa como carpeta a escanear.
+    fn render_drop_hint(&self, ctx: &egui::Context) {
+        let hovering = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        if !hovering || self.status == Status::Running {
+            return;
+        }
+        let screen = ctx.screen_rect();
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("drop_overlay"),
+        ));
+        painter.rect_filled(
+            screen,
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+        );
+        painter.text(
+            screen.center(),
+            egui::Align2::CENTER_CENTER,
+            "📁  Suelta aquí para escanear",
+            egui::FontId::proportional(24.0),
+            egui::Color32::WHITE,
+        );
     }
 
     /// ─── Diálogo: confirmar sobrescritura de reportes existentes ──
