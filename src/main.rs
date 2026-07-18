@@ -55,19 +55,30 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// En Windows: oculta la ventana de consola cuando se lanza la GUI.
-/// En CLI no se llama, por lo que la consola sigue funcionando normal.
+/// En Windows: oculta la ventana de consola cuando se lanza la GUI, pero
+/// solo si esta consola fue creada exclusivamente para este proceso (caso
+/// doble clic desde el Explorador). Si el usuario lanzó el .exe desde una
+/// terminal interactiva (PowerShell/cmd), esa consola ya tenía dueño antes
+/// (el propio shell) y ocultarla haría desaparecer la ventana del usuario.
+/// Se distingue consultando cuántos procesos están adjuntos a la consola:
+/// 1 → consola propia (doble clic); >1 → terminal interactiva ya existente.
 #[cfg(windows)]
 fn hide_console_window() {
     use std::ffi::c_void;
     extern "system" {
         fn GetConsoleWindow() -> *mut c_void;
         fn ShowWindow(hwnd: *mut c_void, n_cmd_show: i32) -> i32;
+        fn GetConsoleProcessList(process_list: *mut u32, count: u32) -> u32;
     }
     const SW_HIDE: i32 = 0;
     unsafe {
         let hwnd = GetConsoleWindow();
-        if !hwnd.is_null() {
+        if hwnd.is_null() {
+            return;
+        }
+        let mut pids = [0u32; 2];
+        let attached = GetConsoleProcessList(pids.as_mut_ptr(), pids.len() as u32);
+        if attached <= 1 {
             ShowWindow(hwnd, SW_HIDE);
         }
     }
