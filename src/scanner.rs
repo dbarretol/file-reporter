@@ -182,13 +182,16 @@ pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>) {
                 extension: extension.clone(),
                 size_mb: (size_mb * 1000.0).round() / 1000.0, // 3 decimales
                 size_bytes: *size_bytes,
-                // Formato DD/MM/AAAA (solo fecha, sin hora)
+                // Formato DD/MM/AAAA (solo fecha, sin hora) para Excel
                 created: created
                     .map(|d| d.format("%d/%m/%Y").to_string())
                     .unwrap_or_default(),
                 modified: modified
                     .map(|d| d.format("%d/%m/%Y").to_string())
                     .unwrap_or_default(),
+                // ISO-8601 completo (fecha + hora) para ordenar/procesar
+                created_iso: created.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                modified_iso: modified.map(|d| d.to_rfc3339()).unwrap_or_default(),
                 directory: dir,
                 full_path: path.display().to_string(),
             });
@@ -279,6 +282,9 @@ mod tests {
         let one = records.iter().find(|r| r.name == "one").unwrap();
         assert_eq!(one.extension, "txt");
         assert_eq!(one.size_bytes, 5);
+        // ISO-8601 debe poder parsearse de vuelta (ordenable, con hora).
+        assert!(chrono::DateTime::parse_from_rfc3339(&one.modified_iso).is_ok());
+        assert!(chrono::DateTime::parse_from_rfc3339(&one.created_iso).is_ok());
         let two = records.iter().find(|r| r.name == "two").unwrap();
         assert_eq!(two.size_bytes, 8);
         assert!(two.full_path.ends_with("two.txt"));

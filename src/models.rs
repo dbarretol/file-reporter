@@ -14,6 +14,12 @@ pub struct FileRecord {
     pub size_bytes: u64,
     pub created: String,
     pub modified: String,
+    /// Fecha y hora en ISO-8601 (`2024-03-15T14:23:01Z`). `created`/`modified`
+    /// usan `DD/MM/AAAA` por compatibilidad con Excel, pero ese formato no
+    /// ordena como texto ni conserva la hora; estas columnas permiten
+    /// ordenar cronológicamente y recuperar la hora exacta.
+    pub created_iso: String,
+    pub modified_iso: String,
     pub directory: String,
     pub full_path: String,
 }
