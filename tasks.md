@@ -356,6 +356,36 @@ JSON escapa vía serde y el árbol Markdown no puede romper su code fence (los c
 
 ---
 
+## Ronda 5 — Auditoría final y veredicto de release (2026-07-18)
+
+**#37 verificado y correcto** (apóstrofo OWASP con `Cow`, saneando solo `name`/`directory`/
+`full_path` en el CSV, con 3 tests de regresión). `cargo test` 24/24, clippy `-D warnings`
+limpio, `cargo build --release` OK. Todo está commiteado.
+
+**Verificación end-to-end real** (binario release, no solo tests): carpeta de prueba con
+junction cíclica, `=1+1.txt`, `-informe.txt`, `@evil.txt`, `LICENSE` sin extensión y
+`AÑO2026/café 😀.pdf`:
+- El ciclo no cuelga el escaneo; la junction se omite del árbol. ✔
+- Dos corridas seguidas → mismo `files_count` (6): los reportes propios quedan excluidos. ✔
+- CSV: BOM `EF BB BF`, delimitador `;`, fórmulas neutralizadas (`'=1+1`, `'-informe`,
+  `'@evil`), Unicode intacto, `size_bytes` y columnas ISO-8601 presentes. ✔
+- Markdown: árbol correcto con conectores; JSON: parsea válido. ✔
+- Filtro `-e .PDF` con salida separada (`-o`): normaliza punto/caja, encuentra 1 archivo,
+  crea la carpeta de salida. ✔
+- GUI release: arranca, permanece viva y cierra grácilmente (`taskkill` sin `/F`). ✔
+
+### Veredicto: **la aplicación queda lista para uso** ✅
+
+37 tareas identificadas en 5 rondas; 36 implementadas y verificadas. El único ítem abierto
+es **#34 (migración a egui/eframe 0.35)**, que es deuda técnica planificada — no un defecto:
+no bloquea el uso ni la publicación, y debe hacerse aislada en su propia rama.
+
+Sugerencias opcionales post-release (no bloqueantes, no son tareas de auditoría):
+subir `version` en `Cargo.toml` (sigue en 0.2.0 tras todos estos cambios), etiquetar un
+release en git, y adjuntar el binario de `target/release/` como artefacto.
+
+---
+
 ## Notas de la auditoría
 
 Cosas revisadas que **están bien** y no requieren acción:
