@@ -327,7 +327,12 @@ impl eframe::App for App {
 impl App {
     /// ─── Sección: Formulario de entrada ──────────────────────────
     fn render_form(&mut self, ui: &mut egui::Ui) {
-        let enabled = self.status != Status::Running;
+        // Mientras el diálogo de confirmación de sobrescritura está abierto,
+        // el formulario de fondo debe quedar inerte: no es un modal real de
+        // egui (ver tarea 33 en tasks.md), así que sin este chequeo el
+        // usuario podría seguir editando rutas/extensiones "por debajo" del
+        // diálogo mientras lo tiene abierto.
+        let enabled = self.status != Status::Running && self.pending_confirm.is_none();
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12.0))
@@ -421,7 +426,7 @@ impl App {
     }
 
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
-        if self.status == Status::Running {
+        if self.status == Status::Running || self.pending_confirm.is_some() {
             return;
         }
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
@@ -434,7 +439,7 @@ impl App {
     /// que quede claro que soltarlo ahí lo usa como carpeta a escanear.
     fn render_drop_hint(&self, ctx: &egui::Context) {
         let hovering = ctx.input(|i| !i.raw.hovered_files.is_empty());
-        if !hovering || self.status == Status::Running {
+        if !hovering || self.status == Status::Running || self.pending_confirm.is_some() {
             return;
         }
         let screen = ctx.screen_rect();
@@ -464,7 +469,9 @@ impl App {
         let files = existing_reports(cfg);
 
         let mut confirmed = false;
-        let mut cancelled = false;
+        // Esc cierra el diálogo como si se pulsara "Cancelar" — sin esto, el
+        // diálogo no responde al teclado en absoluto (ver tarea 33).
+        let mut cancelled = ctx.input(|i| i.key_pressed(egui::Key::Escape));
 
         egui::Window::new("⚠  Sobrescribir reportes existentes")
             .collapsible(false)
@@ -548,6 +555,7 @@ impl App {
 
             // Botón secundario: limpiar
             let can_clear = self.status != Status::Running
+                && self.pending_confirm.is_none()
                 && (!self.input_path.is_empty()
                     || !self.output_path.is_empty()
                     || !self.extensions.is_empty());
