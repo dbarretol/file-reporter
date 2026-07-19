@@ -278,6 +278,54 @@ casi todos introducidos por (o expuestos en) los cambios de la ronda 1.
 - `spawn` del worker ahora maneja el fallo de creación del hilo (antes `std::thread::spawn` habría panickeado).
 - Los 14 tests cubren lo pedido en la tarea 19 y pasan; clippy `-D warnings` limpio.
 
+## Ronda 3 — Re-auditoría (2026-07-18, tras completar 26-33)
+
+Verifiqué en el diff cada fix de la ronda 2: **los 8 están correctamente implementados**
+(#34 sigue pendiente, correctamente marcada). `cargo test` 19/19 (incluye los tests nuevos
+de junctions en raíz/descendiente, exclusión case-insensitive, `writing` reseteado y drop
+de archivos) y `cargo clippy --all-targets -D warnings` limpios, re-ejecutados en esta ronda.
+
+Detalles que confirmé especialmente bien resueltos:
+- #26: `running` gatea todas las ramas animadas de `render_progress` **y** el runner resetea
+  `writing` — doble protección, con test de regresión.
+- #27: la cancelación se detecta por la bandera compartida, no comparando el texto del error —
+  robusto ante cambios de mensaje.
+- #29: seguir el symlink solo en la raíz no reabre el riesgo de ciclos (un ciclo necesita
+  ≥1 enlace descendiente, que se sigue rechazando); el test cubre ambos niveles con junctions
+  reales sin necesitar permisos de admin.
+
+Quedan solo residuos menores (P3):
+
+- [ ] **35. La comparación case-insensitive de rutas excluidas es solo ASCII y solo Windows** — `src/scanner.rs:15-39`
+  Dos limitaciones del fix de #28: (a) `eq_ignore_ascii_case` no pliega caracteres no-ASCII —
+  en NTFS (case-insensitive **Unicode**) una ruta con `Ñ`/`á` tecleada con otra caja no
+  matchea (p. ej. `C:\AÑO2026` vs `c:\año2026`); (b) la rama case-insensitive es
+  `#[cfg(windows)]`, pero APFS/HFS+ en macOS también son case-insensitive por defecto y el
+  crate sí contempla macOS (`open_in_explorer`), así que ahí el bug #28 sigue vivo.
+  **Fix:** comparar con `to_lowercase()` de Unicode y activar la rama para
+  `any(windows, target_os = "macos")`.
+  **Criterio:** el test de exclusión pasa con un path que contenga `Ñ` en distinta caja.
+
+- [ ] **36. Si falla la escritura de un reporte, `writing` queda en `true`** — `src/runner.rs:141-148`
+  Los `?` de `write_csv/markdown/json` retornan antes del `p.writing.store(false)`. Hoy es
+  inofensivo (la GUI gatea el spinner con `running`, y `finished_at` corta el ETA), pero es
+  una trampa latente: cualquier uso futuro de `writing` sin ese gate revive el bug #26.
+  **Fix:** resetear `writing` también en el camino de error (p. ej. envolver la fase de
+  escritura en un closure y hacer el `store(false)` antes de propagar con `?`).
+
+### Notas (sin acción, decisiones aceptables)
+
+- Carrera cancelar/terminar: si el usuario pulsa "Cancelar" cuando el escaneo ya está en la
+  fase de escritura, la corrida termina en "Completado" (los reportes se generaron completos);
+  y si un error real coincide en el tiempo con la cancelación, se muestra como "Cancelado".
+  Ambos desenlaces son razonables; no vale la pena complicar el protocolo por ellos.
+- Enter no confirma el diálogo de sobrescritura (solo Esc cancela) — defendible: la acción
+  destructiva requiere clic deliberado.
+- Los symlinks descendientes se omiten sin sumar a `skipped` — decisión documentada en el
+  docstring de `build_tree` (omisión intencional, no fallo).
+
+---
+
 ## Notas de la auditoría
 
 Cosas revisadas que **están bien** y no requieren acción:
