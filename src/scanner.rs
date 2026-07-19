@@ -14,26 +14,30 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
 
 /// `true` si `p` coincide con alguna ruta de `excluded`.
 ///
-/// En Windows, NTFS es case-insensitive (pero case-preserving): si el
-/// usuario tecleó la ruta de entrada y la de salida con distinta
-/// capitalización para la misma carpeta física (p. ej. `C:\Data` vs
-/// `c:\data`), las rutas excluidas construidas a partir de una (los
-/// report.csv/md/json propios) no coincidirían con las rutas descubiertas
-/// al recorrer la otra si se comparan con `==` (case-sensitive, como hace
-/// `PathBuf`), y una corrida terminaría incluyéndose a sí misma en su
-/// propio reporte (reintroduce el bug #4 — ver tarea 28 en tasks.md).
-/// En otros sistemas de archivos (ext4 en Linux, típicamente
-/// case-sensitive) sí puede haber dos archivos distintos que solo
-/// difieran en mayúsculas, así que ahí se mantiene la comparación exacta.
-#[cfg(windows)]
+/// En Windows (NTFS) y macOS (APFS/HFS+ por defecto), el sistema de
+/// archivos es case-insensitive pero case-preserving: si el usuario tecleó
+/// la ruta de entrada y la de salida con distinta capitalización para la
+/// misma carpeta física (p. ej. `C:\Data` vs `c:\data`), las rutas
+/// excluidas construidas a partir de una (los report.csv/md/json propios)
+/// no coincidirían con las rutas descubiertas al recorrer la otra si se
+/// comparan con `==` (case-sensitive, como hace `PathBuf`), y una corrida
+/// terminaría incluyéndose a sí misma en su propio reporte (reintroduce el
+/// bug #4 — ver tarea 28 en tasks.md). `to_lowercase()` (no
+/// `eq_ignore_ascii_case`) porque NTFS pliega mayúsculas/minúsculas a nivel
+/// Unicode, no solo ASCII: una ruta con `Ñ`/`á` tecleada con otra caja debe
+/// seguir coincidiendo (ver tarea 35). En otros sistemas de archivos (ext4
+/// en Linux, típicamente case-sensitive) sí puede haber dos archivos
+/// distintos que solo difieran en mayúsculas, así que ahí se mantiene la
+/// comparación exacta.
+#[cfg(any(windows, target_os = "macos"))]
 fn path_is_excluded(p: &Path, excluded: &[PathBuf]) -> bool {
-    let p_lossy = p.to_string_lossy();
+    let p_lower = p.to_string_lossy().to_lowercase();
     excluded
         .iter()
-        .any(|e| e.to_string_lossy().eq_ignore_ascii_case(&p_lossy))
+        .any(|e| e.to_string_lossy().to_lowercase() == p_lower)
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn path_is_excluded(p: &Path, excluded: &[PathBuf]) -> bool {
     excluded.contains(&p.to_path_buf())
 }
@@ -337,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn build_tree_excludes_paths_case_insensitively() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("report.csv"), "x").unwrap();
@@ -353,6 +357,29 @@ mod tests {
         let tree = build_tree(dir.path(), &[], None, &[mixed_case_excluded], None, None).unwrap();
 
         assert_eq!(node_names(&tree), vec!["keep.txt".to_string()]);
+    }
+
+    #[test]
+    #[cfg(any(windows, target_os = "macos"))]
+    fn build_tree_excludes_paths_case_insensitively_for_non_ascii_chars() {
+        // `eq_ignore_ascii_case` (la implementación anterior) no pliega
+        // caracteres no-ASCII; NTFS sí es case-insensitive a nivel Unicode,
+        // así que una carpeta con "Ñ"/"año" debe excluirse igual sin
+        // importar la caja usada (ver tarea 35).
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("AÑO2026");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("report.csv"), "x").unwrap();
+        fs::write(sub.join("keep.txt"), "x").unwrap();
+
+        let mixed_case_excluded = dir.path().join("año2026").join("report.csv");
+
+        let tree = build_tree(dir.path(), &[], None, &[mixed_case_excluded], None, None).unwrap();
+
+        let mut records = Vec::new();
+        flatten_to_records(&tree, &mut records);
+        let names: Vec<String> = records.iter().map(|r| r.name.clone()).collect();
+        assert_eq!(names, vec!["keep".to_string()]);
     }
 
     #[test]
