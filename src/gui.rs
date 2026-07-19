@@ -70,7 +70,15 @@ struct App {
     /// lanzar el explorador). Se muestra en la barra de estado sin tocar
     /// `status`/`error`, que son del resultado del escaneo en sí.
     ui_error: Option<String>,
+    /// Cuándo se puso `ui_error`, para poder auto-expirarlo (ver
+    /// `UI_ERROR_TTL`) en vez de dejarlo pegado en la barra de estado para
+    /// siempre (tarea 32 en tasks.md).
+    ui_error_at: Option<Instant>,
 }
+
+/// Tiempo que un `ui_error` puntual permanece visible en la barra de estado
+/// antes de desaparecer solo, si no lo reemplaza antes una acción nueva.
+const UI_ERROR_TTL: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Único subconjunto de `App` que se persiste entre sesiones (`eframe`
 /// "persistence"): las rutas y extensiones tecleadas, no el estado de una
@@ -95,6 +103,19 @@ impl App {
             }
         }
         app
+    }
+
+    /// Establece un `ui_error` puntual y arranca su temporizador de
+    /// auto-expiración (ver `UI_ERROR_TTL`).
+    fn set_ui_error(&mut self, msg: impl Into<String>) {
+        self.ui_error = Some(msg.into());
+        self.ui_error_at = Some(Instant::now());
+    }
+
+    /// Limpia el `ui_error` puntual, si hay uno.
+    fn clear_ui_error(&mut self) {
+        self.ui_error = None;
+        self.ui_error_at = None;
     }
 }
 
@@ -158,6 +179,17 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.status == Status::Running {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+
+        // Auto-expira el `ui_error` puntual en vez de dejarlo pegado en la
+        // barra de estado para siempre (ver tarea 32 en tasks.md).
+        if let Some(at) = self.ui_error_at {
+            let elapsed = at.elapsed();
+            if elapsed >= UI_ERROR_TTL {
+                self.clear_ui_error();
+            } else {
+                ctx.request_repaint_after(UI_ERROR_TTL - elapsed);
+            }
         }
 
         // Drenar mensajes del worker
@@ -535,7 +567,7 @@ impl App {
                 self.pending_confirm = None;
                 self.started_at = None;
                 self.finished_at = None;
-                self.ui_error = None;
+                self.clear_ui_error();
                 self.status = Status::Idle;
             }
         });
@@ -706,7 +738,13 @@ impl App {
                     });
 
                 if let Some(result) = open_result {
-                    self.ui_error = result.err();
+                    // Una acción puntual exitosa limpia cualquier ui_error
+                    // pendiente de una acción anterior, no solo lo reemplaza
+                    // si falla de nuevo (ver tarea 32).
+                    match result.err() {
+                        Some(e) => self.set_ui_error(e),
+                        None => self.clear_ui_error(),
+                    }
                 }
             }
             Status::Failed => {
@@ -794,7 +832,7 @@ impl App {
     fn start_run(&mut self, cfg: RunConfig) {
         self.summary = None;
         self.error = None;
-        self.ui_error = None;
+        self.clear_ui_error();
         self.status = Status::Running;
         self.started_at = Some(Instant::now());
         self.finished_at = None;
@@ -845,7 +883,7 @@ impl App {
             });
         if spawn_result.is_err() {
             self.status = Status::Idle;
-            self.ui_error = Some("No se pudo iniciar el hilo de escaneo".to_string());
+            self.set_ui_error("No se pudo iniciar el hilo de escaneo");
         }
     }
 
