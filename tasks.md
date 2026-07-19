@@ -187,7 +187,7 @@ casi todos introducidos por (o expuestos en) los cambios de la ronda 1.
 
 ### P1 — Bugs nuevos
 
-- [ ] **26. Tras terminar, el panel de progreso muestra un spinner permanente y fuerza repaint continuo** — `src/gui.rs:535-600`, `src/runner.rs:131-132`
+- [x] **26. Tras terminar, el panel de progreso muestra un spinner permanente y fuerza repaint continuo** — `src/gui.rs:535-600`, `src/runner.rs:131-132`
   `Progress.writing` se pone en `true` antes de escribir los reportes y **nunca vuelve a
   `false`**, y `self.progress` no se limpia al terminar. Resultado: con status `Done`, el panel
   de progreso sigue mostrando el spinner con "Generando reportes…" (contradice el "🟢 Completado"
@@ -205,7 +205,7 @@ casi todos introducidos por (o expuestos en) los cambios de la ronda 1.
 
 ### P2 — Correcciones menores
 
-- [ ] **27. La cancelación del usuario se presenta como error** — `src/gui.rs:687-704`, `src/runner.rs:112-114`
+- [x] **27. La cancelación del usuario se presenta como error** — `src/gui.rs:687-704`, `src/runner.rs:112-114`
   Al pulsar "⏹ Cancelar", el run termina en `WorkerMsg::Failed("Escaneo cancelado por el
   usuario")` y la UI muestra el panel rojo "❌ Ha ocurrido un error". Cancelar es una acción
   voluntaria, no un fallo.
@@ -213,7 +213,7 @@ casi todos introducidos por (o expuestos en) los cambios de la ronda 1.
   cancelación) y mostrarla neutra: "⏹ Escaneo cancelado" en gris/ámbar, sin panel de error.
   **Criterio:** cancelar no muestra rojo ni la palabra "error".
 
-- [ ] **28. La exclusión de reportes compara rutas sin canonicalizar (case-sensitive)** — `src/runner.rs:77-85`, `src/scanner.rs:93`
+- [x] **28. La exclusión de reportes compara rutas sin canonicalizar (case-sensitive)** — `src/runner.rs:77-85`, `src/scanner.rs:93`
   `excluded.contains(p)` compara `PathBuf` por componentes **sensible a mayúsculas**, pero NTFS
   es case-insensitive. Si el usuario teclea la entrada como `c:\data` y elige la salida con el
   diálogo (`C:\Data`), la exclusión no matchea: los `report.*` viejos vuelven a incluirse en el
@@ -225,7 +225,7 @@ casi todos introducidos por (o expuestos en) los cambios de la ronda 1.
 
 ### P3 — Pulido / decisiones a documentar
 
-- [ ] **29. Si la carpeta raíz elegida es un symlink/junction, el escaneo falla con mensaje confuso** — `src/scanner.rs:71-73`, `src/runner.rs:66-71`
+- [x] **29. Si la carpeta raíz elegida es un symlink/junction, el escaneo falla con mensaje confuso** — `src/scanner.rs:71-73`, `src/runner.rs:66-71`
   El check anti-ciclos rechaza symlinks en **todos** los niveles, incluida la raíz: elegir una
   carpeta que es junction (OneDrive, unidades mapeadas, `Documents` redirigido) falla con
   "Error al construir el árbol de directorios: Enlace simbólico omitido: …". La raíz la eligió
@@ -233,24 +233,24 @@ casi todos introducidos por (o expuestos en) los cambios de la ronda 1.
   **Fix:** en la raíz, resolver el symlink (`fs::canonicalize`) y escanear el destino; mantener
   el rechazo solo para descendientes.
 
-- [ ] **30. Soltar un archivo (no una carpeta) por drag & drop deja una ruta inválida** — `src/gui.rs:381-389`
+- [x] **30. Soltar un archivo (no una carpeta) por drag & drop deja una ruta inválida** — `src/gui.rs:381-389`
   El overlay dice "Suelta aquí para escanear", pero si lo soltado es un archivo, `input_path`
   queda apuntando a él y el run falla con "La ruta no es un directorio".
   **Fix:** si el path soltado es un archivo, usar su carpeta contenedora (`parent()`).
 
-- [ ] **31. Los botones primarios ignoran el sistema de colores por tema** — `src/gui.rs:482,497,450`
+- [x] **31. Los botones primarios ignoran el sistema de colores por tema** — `src/gui.rs:482,497,450`
   La tarea #18 introdujo `accent_color()/error_color()` por tema, pero los **fills** de
   "Generar reportes" (`ACCENT_DARK`), "Cancelar" (`ERROR_DARK`) y "Sobrescribir" (`ERROR_DARK`)
   siguen fijos: en tema claro, blanco sobre `rgb(70,130,220)` ronda 3:1 de contraste.
   **Fix:** usar las funciones por tema también en los fills de botones (las variantes `_LIGHT`
   ya existen y cumplen AA con texto blanco).
 
-- [ ] **32. `ui_error` queda pegado en la status bar indefinidamente** — `src/gui.rs:213-215,683-685`
+- [x] **32. `ui_error` queda pegado en la status bar indefinidamente** — `src/gui.rs:213-215,683-685`
   Si "Abrir carpeta" falla una vez, el "⚠ No se pudo abrir…" permanece hasta la próxima corrida
   o "Limpiar", tapando el estado real ("Completado").
   **Fix:** limpiarlo cuando una acción posterior tiene éxito, o auto-expirarlo (p. ej. 5 s).
 
-- [ ] **33. El diálogo de sobrescritura no es modal ni responde al teclado** — `src/gui.rs:418-469`
+- [x] **33. El diálogo de sobrescritura no es modal ni responde al teclado** — `src/gui.rs:418-469`
   Con el diálogo abierto se puede seguir editando el formulario de abajo (el `RunConfig`
   capturado en `pending_confirm` queda desactualizado respecto de lo que se ve) y también
   soltar un drag & drop. `Esc` no cancela.
