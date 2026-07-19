@@ -131,23 +131,36 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     if let Some(p) = &progress {
         p.writing.store(true, Ordering::Relaxed);
     }
-    std::fs::create_dir_all(&cfg.output).with_context(|| {
-        format!(
-            "No se pudo crear el directorio de salida {}",
-            cfg.output.display()
-        )
-    })?;
 
-    reporters::csv::write_csv(&records, &csv_path)?;
-    reporters::markdown::write_markdown(&tree, &md_path)?;
-    reporters::json::write_json(&tree, &json_path)?;
+    // Envuelta en un closure para poder resetear `writing` en un único
+    // lugar tanto si la escritura termina bien como si falla a mitad de
+    // camino (los `?` de más abajo, sin esto, saltarían directo al `return`
+    // de la función y dejarían `writing` en `true` para siempre. Hoy es
+    // inofensivo porque la GUI gatea el spinner con `status == Running`,
+    // pero es una trampa latente para cualquier uso futuro de la bandera
+    // que no tenga ese gate — ver tarea 36 en tasks.md).
+    let write_result: Result<()> = (|| {
+        std::fs::create_dir_all(&cfg.output).with_context(|| {
+            format!(
+                "No se pudo crear el directorio de salida {}",
+                cfg.output.display()
+            )
+        })?;
+
+        reporters::csv::write_csv(&records, &csv_path)?;
+        reporters::markdown::write_markdown(&tree, &md_path)?;
+        reporters::json::write_json(&tree, &json_path)?;
+        Ok(())
+    })();
+
+    if let Some(p) = &progress {
+        p.writing.store(false, Ordering::Relaxed);
+    }
+    write_result?;
 
     let skipped_count = skipped.load(Ordering::Relaxed);
     if let Some(p) = &progress {
         p.skipped.store(skipped_count, Ordering::Relaxed);
-        // La fase de escritura terminó: sin esto, `writing` queda en `true`
-        // para siempre y la GUI cree que sigue generando reportes.
-        p.writing.store(false, Ordering::Relaxed);
     }
 
     Ok(RunSummary {
@@ -236,6 +249,34 @@ mod tests {
 
         // Regresión: si `writing` se queda en `true` tras terminar, la GUI
         // muestra un spinner "Generando reportes…" permanente (ver tarea 26).
+        assert!(!progress.writing.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn run_clears_writing_flag_when_write_phase_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        fs::create_dir(&input).unwrap();
+        fs::write(input.join("a.txt"), "hello").unwrap();
+
+        // La "carpeta" de salida es en realidad un archivo ya existente:
+        // `create_dir_all` (el primer paso de la fase de escritura) falla,
+        // forzando el camino de error dentro de la fase 4.
+        let output = dir.path().join("blocked");
+        fs::write(&output, "soy un archivo, no una carpeta").unwrap();
+
+        let cfg = RunConfig {
+            input,
+            output,
+            extensions: vec![],
+        };
+        let progress = Progress::new();
+        let result = run(&cfg, Some(progress.clone()));
+
+        assert!(result.is_err());
+        // Regresión: antes del fix, un error durante la escritura de
+        // reportes propagaba con `?` sin pasar por el reset de `writing`,
+        // dejándolo en `true` para siempre (ver tarea 36).
         assert!(!progress.writing.load(Ordering::Relaxed));
     }
 }
