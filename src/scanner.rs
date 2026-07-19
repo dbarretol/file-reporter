@@ -12,6 +12,32 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
     Some(DateTime::<Utc>::from(t))
 }
 
+/// `true` si `p` coincide con alguna ruta de `excluded`.
+///
+/// En Windows, NTFS es case-insensitive (pero case-preserving): si el
+/// usuario tecleó la ruta de entrada y la de salida con distinta
+/// capitalización para la misma carpeta física (p. ej. `C:\Data` vs
+/// `c:\data`), las rutas excluidas construidas a partir de una (los
+/// report.csv/md/json propios) no coincidirían con las rutas descubiertas
+/// al recorrer la otra si se comparan con `==` (case-sensitive, como hace
+/// `PathBuf`), y una corrida terminaría incluyéndose a sí misma en su
+/// propio reporte (reintroduce el bug #4 — ver tarea 28 en tasks.md).
+/// En otros sistemas de archivos (ext4 en Linux, típicamente
+/// case-sensitive) sí puede haber dos archivos distintos que solo
+/// difieran en mayúsculas, así que ahí se mantiene la comparación exacta.
+#[cfg(windows)]
+fn path_is_excluded(p: &Path, excluded: &[PathBuf]) -> bool {
+    let p_lossy = p.to_string_lossy();
+    excluded
+        .iter()
+        .any(|e| e.to_string_lossy().eq_ignore_ascii_case(&p_lossy))
+}
+
+#[cfg(not(windows))]
+fn path_is_excluded(p: &Path, excluded: &[PathBuf]) -> bool {
+    excluded.contains(&p.to_path_buf())
+}
+
 /// Construye recursivamente el árbol jerárquico.
 /// Los errores de lectura (permisos, etc.) se ignoran silenciosamente
 /// por archivo/carpeta para que el escaneo sea robusto.
@@ -90,7 +116,7 @@ pub fn build_tree(
                         None
                     }
                 })
-                .filter(|p| !excluded.contains(p))
+                .filter(|p| !path_is_excluded(p, excluded))
                 .collect(),
             Err(_) => {
                 // sin permisos -> no podemos listar el contenido; queda como
@@ -277,6 +303,25 @@ mod tests {
                 "zeta.txt".to_string(),
             ]
         );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn build_tree_excludes_paths_case_insensitively() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("report.csv"), "x").unwrap();
+        fs::write(dir.path().join("keep.txt"), "x").unwrap();
+
+        // Simula al usuario tecleando la ruta de salida con una
+        // capitalización distinta a la de disco (misma carpeta física,
+        // p. ej. por haber escrito entrada y salida en cajas de texto
+        // separadas con distinto casing). Ver tarea 28.
+        let mixed_case_excluded =
+            PathBuf::from(dir.path().join("report.csv").to_string_lossy().to_uppercase());
+
+        let tree = build_tree(dir.path(), &[], None, &[mixed_case_excluded], None, None).unwrap();
+
+        assert_eq!(node_names(&tree), vec!["keep.txt".to_string()]);
     }
 
     #[test]
