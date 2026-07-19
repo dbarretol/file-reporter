@@ -457,7 +457,7 @@ impl App {
                             egui::Button::new(
                                 egui::RichText::new("Sobrescribir").color(egui::Color32::WHITE),
                             )
-                            .fill(ERROR_DARK),
+                            .fill(error_color(ui)),
                         )
                         .clicked()
                     {
@@ -489,7 +489,7 @@ impl App {
                     .strong()
                     .color(egui::Color32::WHITE),
             )
-            .fill(ACCENT_DARK)
+            .fill(accent_color(ui))
             .min_size(egui::vec2(180.0, 36.0));
 
             if ui.add_enabled(can_run, run_btn).clicked() {
@@ -504,7 +504,7 @@ impl App {
                         .strong()
                         .color(egui::Color32::WHITE),
                 )
-                .fill(ERROR_DARK)
+                .fill(error_color(ui))
                 .min_size(egui::vec2(120.0, 36.0));
 
                 if ui.add(cancel_btn).clicked() {
