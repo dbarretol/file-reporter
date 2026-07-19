@@ -105,11 +105,16 @@ enum Status {
     Running,
     Done,
     Failed,
+    /// El usuario pidió cancelar y el worker terminó en respuesta a eso.
+    /// Distinto de `Failed`: no es un error, así que la UI no debe mostrar
+    /// el panel rojo de error (ver tarea 27 en tasks.md).
+    Cancelled,
 }
 
 enum WorkerMsg {
     Done(RunSummary),
     Failed(String),
+    Cancelled,
 }
 
 // ─── Constantes de estilo ────────────────────────────────────────
@@ -169,6 +174,10 @@ impl eframe::App for App {
                         self.status = Status::Failed;
                         self.finished_at = Some(Instant::now());
                     }
+                    WorkerMsg::Cancelled => {
+                        self.status = Status::Cancelled;
+                        self.finished_at = Some(Instant::now());
+                    }
                 }
             }
         }
@@ -218,6 +227,7 @@ impl eframe::App for App {
                             Status::Running => ("🔵", self.running_phase_text(), accent_color(ui)),
                             Status::Done => ("🟢", "Completado", success_color(ui)),
                             Status::Failed => ("🔴", "Error", error_color(ui)),
+                            Status::Cancelled => ("⏹", "Cancelado", warning_color(ui)),
                         }
                     };
                     ui.colored_label(color, icon);
@@ -717,6 +727,30 @@ impl App {
                         ui.label(egui::RichText::new(e).monospace().size(12.0));
                     });
             }
+            Status::Cancelled => {
+                // Neutral, no rojo: cancelar no es un error del programa,
+                // es una acción deliberada del usuario (ver tarea 27).
+                egui::Frame::group(ui.style())
+                    .inner_margin(egui::Margin::same(12.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.colored_label(warning_color(ui), egui::RichText::new("⏹").size(16.0));
+                            ui.label(
+                                egui::RichText::new("Escaneo cancelado")
+                                    .strong()
+                                    .color(warning_color(ui)),
+                            );
+                        });
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "El escaneo se detuvo antes de terminar porque el usuario lo canceló.",
+                            )
+                            .color(muted_color(ui))
+                            .size(12.0),
+                        );
+                    });
+            }
             _ => {}
         }
     }
@@ -779,12 +813,23 @@ impl App {
             .stack_size(crate::SCAN_THREAD_STACK_SIZE)
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    runner::run(&cfg, Some(progress))
+                    runner::run(&cfg, Some(progress.clone()))
                 }));
 
                 let msg = match result {
                     Ok(Ok(s)) => WorkerMsg::Done(s),
-                    Ok(Err(e)) => WorkerMsg::Failed(e.to_string()),
+                    // Distinguimos cancelación de error real preguntando la
+                    // bandera compartida (la puso en `true` el botón
+                    // "Cancelar"), no comparando el texto del error: así no
+                    // depende de que el mensaje de `runner::run` no cambie
+                    // (ver tarea 27).
+                    Ok(Err(e)) => {
+                        if progress.cancel.load(Ordering::Relaxed) {
+                            WorkerMsg::Cancelled
+                        } else {
+                            WorkerMsg::Failed(e.to_string())
+                        }
+                    }
                     Err(panic_payload) => {
                         let detail = if let Some(s) = panic_payload.downcast_ref::<&str>() {
                             s.to_string()
