@@ -326,6 +326,38 @@ Quedan solo residuos menores (P3):
 
 ---
 
+## Ronda 4 — Re-auditoría (2026-07-18, tras completar 35-36)
+
+**#35 y #36 verificados y correctos.** `cargo test` 21/21 y `cargo clippy --all-targets
+-D warnings` limpios, re-ejecutados en esta ronda. Detalles confirmados:
+- #35: `to_lowercase()` Unicode en `cfg(any(windows, macos))`, con test de `AÑO2026` vs
+  `año2026`. (El plegado de `to_lowercase` no es idéntico byte a byte a la tabla upcase de
+  NTFS en rarezas tipo `ß`/İ turca, pero cubre todo caso realista — no requiere acción.)
+- #36: fase de escritura envuelta en closure con reset de `writing` en el único punto de
+  salida, y test de regresión que fuerza el camino de error (output bloqueado por un archivo).
+
+⚠ **Pendiente de commit:** el fix de #36 (`src/runner.rs`) y el `tasks.md` están en el
+working tree sin commitear.
+
+Esta ronda incluyó una pasada dedicada a los reporters (la zona menos revisada hasta ahora):
+JSON escapa vía serde y el árbol Markdown no puede romper su code fence (los conectores
+`├──`/`└──` impiden que un nombre malicioso inicie línea). Un solo hallazgo nuevo:
+
+- [ ] **37. Inyección de fórmulas (CSV injection) al abrir el reporte en Excel** — `src/reporters/csv.rs`, `src/scanner.rs:flatten_to_records`
+  Los nombres de archivo y rutas escaneados se vuelcan tal cual al CSV. Un archivo cuyo
+  nombre empiece por `=`, `+`, `-` o `@` (p. ej. `=cmd|'/c calc'!A1.txt`, o el inocente
+  `-informe.txt`) se interpreta como **fórmula** al abrir `report.csv` en Excel — el vector
+  clásico de CSV injection: el CSV con BOM y `;` está explícitamente diseñado para abrirse
+  en Excel, y el contenido proviene de directorios que el usuario no controla (descargas,
+  carpetas compartidas).
+  **Fix:** al serializar campos de texto (`name`, `directory`, `full_path`), si empiezan por
+  `=`, `+`, `-`, `@`, tab o CR, anteponer `'` (apóstrofo: Excel lo trata como texto literal).
+  Hacerlo solo en el CSV (JSON/Markdown no ejecutan fórmulas), idealmente detrás de una
+  función `sanitize_for_spreadsheet()` con test.
+  **Criterio:** un archivo llamado `=1+1.txt` aparece en Excel como texto, no como `2`.
+
+---
+
 ## Notas de la auditoría
 
 Cosas revisadas que **están bien** y no requieren acción:
