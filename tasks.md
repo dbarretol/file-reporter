@@ -169,8 +169,114 @@ Orden sugerido de trabajo: P0 → P1 → P2 → P3.
   `eframe/egui 0.28` y `rfd 0.14` tienen varias versiones más recientes con fixes de plataforma.
   Migrar (la API de `Rounding`→`CornerRadius` y `Margin` cambia en 0.29+); hacerlo después de
   las tareas P0/P1 para no mezclar refactor con fixes.
+  **Resolución (2026-07-18):** se actualizó a **eframe/egui 0.30 y rfd 0.15**, no a la última
+  (0.35), deliberadamente: 0.31+ renombra `Rounding`→`CornerRadius` y cambia tipos de
+  `Margin`/`Shadow`, y 0.34+ rediseña el trait `eframe::App` (`update`→`ui`), mueve paneles
+  fuera de `egui::` y elimina `Context::style()`/`screen_rect()` — un refactor de arquitectura,
+  no una actualización de deps. Se verificó con el compilador que 0.30 compila con cero cambios
+  de código y trae los fixes de plataforma. La migración a 0.35 queda como tarea nueva (ver #34).
 
 ---
+
+## Ronda 2 — Re-auditoría (2026-07-18, tras completar 1-25)
+
+Verifiqué en el código cada uno de los 25 puntos: **todos están correctamente
+implementados** (además: `cargo test` 14/14 y `cargo clippy --all-targets -D warnings`
+limpios, re-ejecutados en esta ronda). Los siguientes son hallazgos **nuevos**,
+casi todos introducidos por (o expuestos en) los cambios de la ronda 1.
+
+### P1 — Bugs nuevos
+
+- [ ] **26. Tras terminar, el panel de progreso muestra un spinner permanente y fuerza repaint continuo** — `src/gui.rs:535-600`, `src/runner.rs:131-132`
+  `Progress.writing` se pone en `true` antes de escribir los reportes y **nunca vuelve a
+  `false`**, y `self.progress` no se limpia al terminar. Resultado: con status `Done`, el panel
+  de progreso sigue mostrando el spinner con "Generando reportes…" (contradice el "🟢 Completado"
+  de la status bar y el "Tiempo total" congelado de al lado). Tras `Failed`/cancelación a mitad
+  de escaneo pasa lo mismo con "N archivos encontrados…". Peor: `ui.spinner()` pide repaint en
+  cada frame, así que la app queda repintando a ~60 fps indefinidamente (CPU/batería) aunque
+  esté ociosa.
+  **Fix:** en `render_progress`, si `status != Running` no dibujar spinner: mostrar el resumen
+  estático (barra al 100 % o solo el tiempo total), o directamente ocultar el panel cuando hay
+  `summary`/`error`. Relacionado: durante la fase de escritura el ETA cae en la rama
+  `fraction >= 1.0` y ya dice "Tiempo total" aunque siga corriendo (`src/gui.rs:808-813`) —
+  mostrar "escribiendo reportes…" o el tiempo transcurrido hasta que llegue `finished_at`.
+  **Criterio:** tras completar o cancelar, no queda ningún spinner visible y el uso de CPU en
+  reposo es ~0 %.
+
+### P2 — Correcciones menores
+
+- [ ] **27. La cancelación del usuario se presenta como error** — `src/gui.rs:687-704`, `src/runner.rs:112-114`
+  Al pulsar "⏹ Cancelar", el run termina en `WorkerMsg::Failed("Escaneo cancelado por el
+  usuario")` y la UI muestra el panel rojo "❌ Ha ocurrido un error". Cancelar es una acción
+  voluntaria, no un fallo.
+  **Fix:** distinguir la cancelación (p. ej. variante `Status::Cancelled` o detectar el error de
+  cancelación) y mostrarla neutra: "⏹ Escaneo cancelado" en gris/ámbar, sin panel de error.
+  **Criterio:** cancelar no muestra rojo ni la palabra "error".
+
+- [ ] **28. La exclusión de reportes compara rutas sin canonicalizar (case-sensitive)** — `src/runner.rs:77-85`, `src/scanner.rs:93`
+  `excluded.contains(p)` compara `PathBuf` por componentes **sensible a mayúsculas**, pero NTFS
+  es case-insensitive. Si el usuario teclea la entrada como `c:\data` y elige la salida con el
+  diálogo (`C:\Data`), la exclusión no matchea: los `report.*` viejos vuelven a incluirse en el
+  escaneo (reaparece el bug #4) y el check `cfg.output != cfg.input` también se equivoca.
+  **Fix:** canonicalizar (`fs::canonicalize`/`dunce`) input y output al armar `excluded` y usar
+  las rutas canónicas también para las entradas comparadas, o comparar case-insensitive en Windows.
+  **Criterio:** con input `c:\data` y output `C:\DATA`, dos corridas seguidas dan el mismo
+  `files_count`.
+
+### P3 — Pulido / decisiones a documentar
+
+- [ ] **29. Si la carpeta raíz elegida es un symlink/junction, el escaneo falla con mensaje confuso** — `src/scanner.rs:71-73`, `src/runner.rs:66-71`
+  El check anti-ciclos rechaza symlinks en **todos** los niveles, incluida la raíz: elegir una
+  carpeta que es junction (OneDrive, unidades mapeadas, `Documents` redirigido) falla con
+  "Error al construir el árbol de directorios: Enlace simbólico omitido: …". La raíz la eligió
+  el usuario explícitamente: no puede formar un ciclo por sí sola.
+  **Fix:** en la raíz, resolver el symlink (`fs::canonicalize`) y escanear el destino; mantener
+  el rechazo solo para descendientes.
+
+- [ ] **30. Soltar un archivo (no una carpeta) por drag & drop deja una ruta inválida** — `src/gui.rs:381-389`
+  El overlay dice "Suelta aquí para escanear", pero si lo soltado es un archivo, `input_path`
+  queda apuntando a él y el run falla con "La ruta no es un directorio".
+  **Fix:** si el path soltado es un archivo, usar su carpeta contenedora (`parent()`).
+
+- [ ] **31. Los botones primarios ignoran el sistema de colores por tema** — `src/gui.rs:482,497,450`
+  La tarea #18 introdujo `accent_color()/error_color()` por tema, pero los **fills** de
+  "Generar reportes" (`ACCENT_DARK`), "Cancelar" (`ERROR_DARK`) y "Sobrescribir" (`ERROR_DARK`)
+  siguen fijos: en tema claro, blanco sobre `rgb(70,130,220)` ronda 3:1 de contraste.
+  **Fix:** usar las funciones por tema también en los fills de botones (las variantes `_LIGHT`
+  ya existen y cumplen AA con texto blanco).
+
+- [ ] **32. `ui_error` queda pegado en la status bar indefinidamente** — `src/gui.rs:213-215,683-685`
+  Si "Abrir carpeta" falla una vez, el "⚠ No se pudo abrir…" permanece hasta la próxima corrida
+  o "Limpiar", tapando el estado real ("Completado").
+  **Fix:** limpiarlo cuando una acción posterior tiene éxito, o auto-expirarlo (p. ej. 5 s).
+
+- [ ] **33. El diálogo de sobrescritura no es modal ni responde al teclado** — `src/gui.rs:418-469`
+  Con el diálogo abierto se puede seguir editando el formulario de abajo (el `RunConfig`
+  capturado en `pending_confirm` queda desactualizado respecto de lo que se ve) y también
+  soltar un drag & drop. `Esc` no cancela.
+  **Fix:** deshabilitar el formulario y el drop mientras `pending_confirm.is_some()` (o usar
+  `egui::Modal` al migrar a egui ≥0.31, ver #34) y mapear `Esc` → cancelar.
+
+- [ ] **34. Migración mayor a egui/eframe 0.35** — `Cargo.toml:16-26`
+  Heredada de la resolución de #25. Refactor real: `Rounding`→`CornerRadius`, tipos de
+  `Margin`, rediseño del trait `eframe::App` (`update`→`ui`), paneles fuera de `egui::`,
+  `Context::style()/screen_rect()` eliminados. Hacerla aislada, en su propia rama/PR, sin
+  mezclar con fixes funcionales. Bonus al llegar a 0.31+: `egui::Modal` nativo para #33.
+
+### Verificado y correcto en esta ronda (sin acción)
+
+- Symlinks descendientes omitidos sin recursión (tarea 1) y `skipped` no los cuenta como error — decisión documentada en el docstring.
+- Progreso granular real durante el I/O con total desconocido → spinner + contador en vivo (tareas 2, 11 y 17): una sola pasada de disco.
+- `hide_console_window` usa `GetConsoleProcessList` con buffer de 2 — patrón correcto (tarea 3).
+- `create_dir_all` movido a después del escaneo y reportes propios excluidos (tarea 4) — ver matiz de casing en #28.
+- `finished_at` congela el tiempo total (tarea 5) y `Limpiar` resetea todos los campos nuevos.
+- Cancelación cooperativa chequeada en cada nodo (tarea 7) — ver presentación en #27.
+- `clean_path_input` cubre comillas de "Copiar como ruta de acceso" y se usa en `can_run` y `build_cfg` (tarea 8).
+- Confirmación de sobrescritura solo cuando existen reportes previos (tarea 9) — ver modalidad en #33.
+- `skipped_count` llega a CLI y GUI con aviso ámbar (tarea 10).
+- Persistencia de formulario con `eframe::APP_KEY` sin persistir estado de corrida (tarea 13).
+- `spawn` del worker ahora maneja el fallo de creación del hilo (antes `std::thread::spawn` habría panickeado).
+- Los 14 tests cubren lo pedido en la tarea 19 y pasan; clippy `-D warnings` limpio.
 
 ## Notas de la auditoría
 
