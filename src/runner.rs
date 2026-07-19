@@ -145,6 +145,9 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     let skipped_count = skipped.load(Ordering::Relaxed);
     if let Some(p) = &progress {
         p.skipped.store(skipped_count, Ordering::Relaxed);
+        // La fase de escritura terminó: sin esto, `writing` queda en `true`
+        // para siempre y la GUI cree que sigue generando reportes.
+        p.writing.store(false, Ordering::Relaxed);
     }
 
     Ok(RunSummary {
@@ -214,6 +217,26 @@ mod tests {
         assert!(summary.md_path.exists());
         assert!(summary.json_path.exists());
         assert_eq!(summary.csv_path, output.join("report.csv"));
+    }
+
+    #[test]
+    fn run_clears_writing_flag_when_done() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        fs::create_dir(&input).unwrap();
+        fs::write(input.join("a.txt"), "hello").unwrap();
+
+        let cfg = RunConfig {
+            input,
+            output: dir.path().join("out"),
+            extensions: vec![],
+        };
+        let progress = Progress::new();
+        run(&cfg, Some(progress.clone())).unwrap();
+
+        // Regresión: si `writing` se queda en `true` tras terminar, la GUI
+        // muestra un spinner "Generando reportes…" permanente (ver tarea 26).
+        assert!(!progress.writing.load(Ordering::Relaxed));
     }
 }
 

@@ -538,7 +538,13 @@ impl App {
         let frac = p.fraction();
         let done = p.done.load(Ordering::Relaxed);
         let total = p.total.load(Ordering::Relaxed);
-        let writing = p.writing.load(Ordering::Relaxed);
+        // Una vez que el worker terminó (Done/Failed/cancelado), el `Progress`
+        // compartido queda congelado tal cual en su último instante y ya no
+        // hay nada que animar: seguir dibujando `ui.spinner()` fuerza repaint
+        // continuo (~60 fps) aunque la app esté ociosa. `running` gatea todas
+        // las ramas animadas de abajo.
+        let running = self.status == Status::Running;
+        let writing = running && p.writing.load(Ordering::Relaxed);
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12.0))
@@ -573,7 +579,7 @@ impl App {
                     // y evitamos cualquier problema de cálculo de ancho.
                     let bar = egui::ProgressBar::new(frac.clamp(0.0, 1.0))
                         .show_percentage()
-                        .animate(self.status == Status::Running);
+                        .animate(running);
                     ui.add(bar);
 
                     ui.add_space(4.0);
@@ -582,7 +588,7 @@ impl App {
                             .color(muted_color(ui))
                             .size(11.0),
                     );
-                } else {
+                } else if running {
                     // No hacemos una pasada previa solo para contar archivos
                     // (duplicaría el I/O y casi duplicaría el tiempo total),
                     // así que mientras se escanea no conocemos el total:
@@ -595,6 +601,15 @@ impl App {
                                 .size(12.0),
                         );
                     });
+                } else {
+                    // Terminó (o se canceló) antes de llegar a conocer un
+                    // total: no hay barra que mostrar, solo el conteo final
+                    // congelado, sin animación.
+                    ui.label(
+                        egui::RichText::new(format!("{done} archivos procesados"))
+                            .color(muted_color(ui))
+                            .size(11.0),
+                    );
                 }
             });
     }
@@ -800,6 +815,21 @@ impl App {
             return format!(
                 "⏱  Tiempo total: {}",
                 fmt_seconds(finished.duration_since(start).as_secs_f32())
+            );
+        }
+        // Durante la fase de escritura, `done`/`total` (y por lo tanto
+        // `fraction`) ya quedaron fijos en el conteo final antes de empezar
+        // a volcar los reportes a disco, así que sin este chequeo caería en
+        // la rama de `fraction >= 1.0` de más abajo y diría "Tiempo total"
+        // como si ya hubiera terminado, cuando el worker sigue corriendo.
+        let writing = self
+            .progress
+            .as_ref()
+            .is_some_and(|p| p.writing.load(Ordering::Relaxed));
+        if writing {
+            return format!(
+                "⏱  Escribiendo reportes… {}",
+                fmt_seconds(start.elapsed().as_secs_f32())
             );
         }
         if fraction <= 0.001 {
