@@ -336,14 +336,12 @@ Quedan solo residuos menores (P3):
 - #36: fase de escritura envuelta en closure con reset de `writing` en el único punto de
   salida, y test de regresión que fuerza el camino de error (output bloqueado por un archivo).
 
-⚠ **Pendiente de commit:** el fix de #36 (`src/runner.rs`) y el `tasks.md` están en el
-working tree sin commitear.
 
 Esta ronda incluyó una pasada dedicada a los reporters (la zona menos revisada hasta ahora):
 JSON escapa vía serde y el árbol Markdown no puede romper su code fence (los conectores
 `├──`/`└──` impiden que un nombre malicioso inicie línea). Un solo hallazgo nuevo:
 
-- [ ] **37. Inyección de fórmulas (CSV injection) al abrir el reporte en Excel** — `src/reporters/csv.rs`, `src/scanner.rs:flatten_to_records`
+- [x] **37. Inyección de fórmulas (CSV injection) al abrir el reporte en Excel** — `src/reporters/csv.rs`, `src/scanner.rs:flatten_to_records`
   Los nombres de archivo y rutas escaneados se vuelcan tal cual al CSV. Un archivo cuyo
   nombre empiece por `=`, `+`, `-` o `@` (p. ej. `=cmd|'/c calc'!A1.txt`, o el inocente
   `-informe.txt`) se interpreta como **fórmula** al abrir `report.csv` en Excel — el vector
