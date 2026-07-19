@@ -296,7 +296,7 @@ Detalles que confirmé especialmente bien resueltos:
 
 Quedan solo residuos menores (P3):
 
-- [ ] **35. La comparación case-insensitive de rutas excluidas es solo ASCII y solo Windows** — `src/scanner.rs:15-39`
+- [x] **35. La comparación case-insensitive de rutas excluidas es solo ASCII y solo Windows** — `src/scanner.rs:15-39`
   Dos limitaciones del fix de #28: (a) `eq_ignore_ascii_case` no pliega caracteres no-ASCII —
   en NTFS (case-insensitive **Unicode**) una ruta con `Ñ`/`á` tecleada con otra caja no
   matchea (p. ej. `C:\AÑO2026` vs `c:\año2026`); (b) la rama case-insensitive es
@@ -306,7 +306,7 @@ Quedan solo residuos menores (P3):
   `any(windows, target_os = "macos")`.
   **Criterio:** el test de exclusión pasa con un path que contenga `Ñ` en distinta caja.
 
-- [ ] **36. Si falla la escritura de un reporte, `writing` queda en `true`** — `src/runner.rs:141-148`
+- [x] **36. Si falla la escritura de un reporte, `writing` queda en `true`** — `src/runner.rs:141-148`
   Los `?` de `write_csv/markdown/json` retornan antes del `p.writing.store(false)`. Hoy es
   inofensivo (la GUI gatea el spinner con `running`, y `finished_at` corta el ETA), pero es
   una trampa latente: cualquier uso futuro de `writing` sin ese gate revive el bug #26.
