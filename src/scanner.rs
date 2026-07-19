@@ -77,13 +77,26 @@ pub fn build_tree(
     cancel: Option<&AtomicBool>,
     skipped: Option<&AtomicUsize>,
 ) -> Result<Node> {
+    build_tree_inner(path, filters, counter, excluded, cancel, skipped, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_tree_inner(
+    path: &Path,
+    filters: &[String],
+    counter: Option<&AtomicUsize>,
+    excluded: &[PathBuf],
+    cancel: Option<&AtomicBool>,
+    skipped: Option<&AtomicUsize>,
+    is_root: bool,
+) -> Result<Node> {
     if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
         bail!("Escaneo cancelado");
     }
 
     // symlink_metadata (a diferencia de metadata) no sigue enlaces simbólicos
     // ni junctions de Windows, evitando recursión infinita en ciclos.
-    let metadata = match fs::symlink_metadata(path) {
+    let mut metadata = match fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(e) => {
             if let Some(s) = skipped {
@@ -95,7 +108,23 @@ pub fn build_tree(
     };
 
     if metadata.file_type().is_symlink() {
-        bail!("Enlace simbólico omitido: {}", path.display());
+        if is_root {
+            // La raíz la eligió el usuario a propósito (selector de carpeta o
+            // drag & drop): rechazarla porque resulta ser un symlink/junction
+            // (p. ej. una carpeta de OneDrive) es una sorpresa confusa, no
+            // una protección útil. La protección contra ciclos solo hace
+            // falta para los descendientes (rama `else`, sin cambios) — ver
+            // tarea 29 en tasks.md. `fs::metadata` sí sigue el enlace, a
+            // diferencia de `symlink_metadata`.
+            metadata = fs::metadata(path).with_context(|| {
+                format!(
+                    "No se pudo resolver el enlace de la carpeta raíz: {}",
+                    path.display()
+                )
+            })?;
+        } else {
+            bail!("Enlace simbólico omitido: {}", path.display());
+        }
     }
 
     let name = path
@@ -131,7 +160,9 @@ pub fn build_tree(
         // Procesamos hijos en paralelo
         let mut children: Vec<Node> = entries
             .par_iter()
-            .filter_map(|p| build_tree(p, filters, counter, excluded, cancel, skipped).ok())
+            .filter_map(|p| {
+                build_tree_inner(p, filters, counter, excluded, cancel, skipped, false).ok()
+            })
             .filter(|n| match n {
                 // Conservamos archivos que pasen el filtro
                 Node::File { extension, .. } => {
@@ -322,6 +353,51 @@ mod tests {
         let tree = build_tree(dir.path(), &[], None, &[mixed_case_excluded], None, None).unwrap();
 
         assert_eq!(node_names(&tree), vec!["keep.txt".to_string()]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn build_tree_follows_symlink_at_root_but_not_at_descendant() {
+        // Las junctions no requieren privilegios elevados en Windows (a
+        // diferencia de los symlinks reales), así que son la forma más
+        // fiable de simular esto en un test sin depender de que la máquina
+        // tenga modo desarrollador o se ejecute como admin.
+        fn make_junction(link: &Path, target: &Path) {
+            let status = std::process::Command::new("cmd")
+                .args(["/c", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .status()
+                .unwrap();
+            assert!(status.success(), "no se pudo crear la junction de prueba");
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let real_root = dir.path().join("real_root");
+        fs::create_dir(&real_root).unwrap();
+        fs::write(real_root.join("a.txt"), "hello").unwrap();
+
+        // Caso 1: la raíz misma es una junction. Antes del fix, `build_tree`
+        // fallaba con "Enlace simbólico omitido" aunque el usuario la eligió
+        // a propósito (ver tarea 29). Ahora debe seguirla y escanear el
+        // contenido real.
+        let link_root = dir.path().join("link_root");
+        make_junction(&link_root, &real_root);
+        let tree = build_tree(&link_root, &[], None, &[], None, None).unwrap();
+        assert_eq!(node_names(&tree), vec!["a.txt".to_string()]);
+
+        // Caso 2: una junction dentro del árbol (no en la raíz) se sigue
+        // rechazando — la protección contra ciclos infinitos solo se relajó
+        // para el nivel raíz.
+        let real_sub = dir.path().join("real_sub");
+        fs::create_dir(&real_sub).unwrap();
+        fs::write(real_sub.join("b.txt"), "hello").unwrap();
+        let outer = dir.path().join("outer");
+        fs::create_dir(&outer).unwrap();
+        make_junction(&outer.join("link_sub"), &real_sub);
+
+        let tree2 = build_tree(&outer, &[], None, &[], None, None).unwrap();
+        assert!(node_names(&tree2).is_empty());
     }
 
     #[test]
