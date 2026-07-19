@@ -394,7 +394,7 @@ impl App {
         }
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
         if let Some(path) = dropped.iter().find_map(|f| f.path.clone()) {
-            self.input_path = path.display().to_string();
+            self.input_path = dropped_path_to_input_dir(path).display().to_string();
         }
     }
 
@@ -954,6 +954,19 @@ fn clean_path_input(s: &str) -> &str {
     s.trim().trim_matches('"')
 }
 
+/// El campo "carpeta a escanear" espera un directorio. Si el usuario suelta
+/// un archivo suelto (no una carpeta) por drag & drop, usar su ruta tal
+/// cual dejaría un `input_path` que `runner::run` rechazaría con "La ruta
+/// no es un directorio" — en su lugar, usamos la carpeta que lo contiene
+/// (ver tarea 30 en tasks.md).
+fn dropped_path_to_input_dir(path: PathBuf) -> PathBuf {
+    if path.is_dir() {
+        path
+    } else {
+        path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
+    }
+}
+
 /// Reportes de una corrida anterior que ya existen en la carpeta de salida
 /// de `cfg` y que esta corrida sobrescribiría.
 fn existing_reports(cfg: &RunConfig) -> Vec<PathBuf> {
@@ -1069,5 +1082,20 @@ mod tests {
         assert_eq!(fmt_seconds(3599.0), "59m 59s");
         assert_eq!(fmt_seconds(3600.0), "1h 00m 00s");
         assert_eq!(fmt_seconds(3661.0), "1h 01m 01s");
+    }
+
+    #[test]
+    fn dropped_path_to_input_dir_keeps_directories_as_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        assert_eq!(dropped_path_to_input_dir(dir_path.clone()), dir_path);
+    }
+
+    #[test]
+    fn dropped_path_to_input_dir_uses_parent_for_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("dropped.txt");
+        std::fs::write(&file_path, "x").unwrap();
+        assert_eq!(dropped_path_to_input_dir(file_path), dir.path().to_path_buf());
     }
 }
