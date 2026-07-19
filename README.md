@@ -8,16 +8,23 @@ Diseñada para ser **rápida**, **robusta** y **fácil de usar**, ofrece tanto u
 
 ## ✨ Características principales
 
-- 🚀 **Alto rendimiento** — escaneo paralelo con [`rayon`](https://crates.io/crates/rayon) para grandes volúmenes de archivos.
-- 🖥️ **Doble interfaz** — GUI nativa (con [`egui`](https://github.com/emilk/egui)) o línea de comandos (con [`clap`](https://crates.io/crates/clap)).
+- 🚀 **Alto rendimiento** — escaneo paralelo con [`rayon`](https://crates.io/crates/rayon) para grandes volúmenes de archivos, en una única pasada por disco (sin doble recorrido para contar y luego escanear).
+- 🖥️ **Doble interfaz** — GUI nativa (con [`egui`](https://github.com/emilk/egui)) o línea de comandos (con [`clap`](https://crates.io/crates/clap)), compartiendo exactamente la misma lógica de escaneo.
 - 📊 **Tres formatos de salida**:
-  - **CSV** compatible con Excel (UTF-8 con BOM, separador `;`).
+  - **CSV** compatible con Excel (UTF-8 con BOM, separador `;`), protegido contra inyección de fórmulas.
   - **Markdown** con árbol jerárquico estilo `tree`.
   - **JSON** estructurado para integraciones.
 - 🎯 **Filtro por extensiones** — analiza solo los tipos de archivo que te interesan.
-- 📅 **Metadatos completos** — nombre, extensión, tamaño en MB, fechas de creación y modificación, ruta.
-- 🛡️ **Manejo robusto de errores** — sigue funcionando aunque haya carpetas sin permisos.
-- 📈 **Barra de progreso con ETA** en la GUI.
+- 📅 **Metadatos completos** — nombre, extensión, tamaño en MB y en bytes exactos, fechas de creación y modificación (formato local + ISO-8601), ruta.
+- 🛡️ **Manejo robusto de errores** — sigue funcionando aunque haya carpetas sin permisos (y avisa cuántos elementos quedaron fuera del reporte), y detecta symlinks/junctions cíclicos sin colgarse.
+- 📈 **Barra de progreso granular con ETA**, que distingue la fase de escaneo de la de escritura de reportes.
+- ⏹️ **Cancelable en cualquier momento**, con vuelta a un estado utilizable en menos de un segundo.
+- 🖱️ **Drag & drop** de carpetas directamente sobre la ventana.
+- ♻️ **Recuerda** las últimas rutas y extensiones usadas entre sesiones.
+- ⚠️ **Confirma antes de sobrescribir** reportes de una corrida anterior.
+- ⌨️ **Enter para ejecutar** desde cualquier campo del formulario.
+- 🎨 **Tema claro/oscuro automático**, siguiendo la configuración del sistema operativo, con contraste ajustado (WCAG AA) en ambos.
+- ✅ **Cubierto por tests automatizados** (incluye pruebas con operaciones reales de filesystem vía `tempfile`, y con junctions de Windows para los casos de symlinks).
 - 🪟 **Multiplataforma** — Windows, Linux y macOS (probado principalmente en Windows).
 
 ---
@@ -67,10 +74,12 @@ Simplemente ejecuta el binario sin argumentos, o haz **doble clic** sobre el `.e
 
 Aparecerá una ventana donde podrás:
 
-1. Seleccionar la carpeta a escanear (escribiendo la ruta o usando "Examinar…").
+1. Seleccionar la carpeta a escanear (escribiendo la ruta, usando "Examinar…", o arrastrándola directamente a la ventana).
 2. Definir una carpeta de salida personalizada (opcional).
 3. Especificar extensiones a filtrar, con presets rápidos.
-4. Pulsar **▶ Generar reportes** y monitorizar el progreso en tiempo real.
+4. Pulsar **▶ Generar reportes** (o Enter desde cualquier campo) y monitorizar el progreso en tiempo real, con opción de **⏹ Cancelar** en cualquier momento.
+
+Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide confirmación antes de sobrescribirlos. Las rutas y extensiones usadas se recuerdan automáticamente para la próxima sesión.
 
 ### Modo CLI (línea de comandos)
 
@@ -134,6 +143,10 @@ Tabla plana con un registro por archivo, ideal para abrir en Excel o procesar co
 > Excel reconoce sin configuración adicional, pero como texto no ordena cronológicamente y
 > descarta la hora. Las columnas `*_iso` llevan fecha+hora completas en un formato que sí
 > ordena como texto y es estándar para procesar con scripts.
+>
+> 🛡️ **Protegido contra CSV injection:** si un nombre de archivo o ruta empieza por `=`, `+`,
+> `-`, `@`, tabulador o retorno de carro, se antepone un apóstrofo al escribirlo en el CSV para
+> que Excel lo trate como texto literal en vez de evaluarlo como fórmula.
 
 ### `report.md`
 
@@ -166,6 +179,7 @@ Estructura jerárquica completa, útil para automatización e integraciones:
     {
       "type": "file",
       "name": "documento.pdf",
+      "path": "D:\\MiCarpeta\\documento.pdf",
       "size_mb": 1.234,
       "size_bytes": 1294237,
       "extension": "pdf",
@@ -199,9 +213,10 @@ file-reporter/
 
 ### Diseño modular
 
-- **`runner.rs`** centraliza la lógica de ejecución, permitiendo que CLI y GUI compartan exactamente el mismo flujo.
-- **`scanner.rs`** usa `rayon` para procesar directorios en paralelo, con manejo robusto de errores por archivo (las carpetas sin permisos se omiten en lugar de detener todo el escaneo).
-- **`gui.rs`** ejecuta el escaneo en un hilo separado con comunicación vía `mpsc::channel` y reporte de progreso compartido con `Arc<AtomicUsize>`, manteniendo la UI 100% responsive.
+- **`runner.rs`** centraliza la lógica de ejecución, permitiendo que CLI y GUI compartan exactamente el mismo flujo. Expone un `Progress` compartido (`Arc<...>` con varios `Atomic*`) que reporta contador de archivos, fase actual (escaneando/escribiendo), elementos omitidos y una bandera de cancelación.
+- **`scanner.rs`** usa `rayon` para procesar directorios en paralelo en una única pasada, con manejo robusto de errores por archivo (las carpetas sin permisos se omiten en vez de detener todo el escaneo) y detección de symlinks/junctions vía `symlink_metadata` para evitar recursión infinita en ciclos — salvo en la raíz elegida por el usuario, que sí se sigue.
+- **`gui.rs`** ejecuta el escaneo en un hilo separado (con pila ampliada y `catch_unwind` para que un panic interno no tumbe la app) con comunicación vía `mpsc::channel` y el `Progress` compartido, manteniendo la UI 100% responsive; distingue cancelación de error real consultando la bandera compartida, no el texto del mensaje.
+- **`reporters/csv.rs`** sanea los campos de texto libre antes de escribirlos para neutralizar CSV injection.
 
 ---
 
@@ -217,27 +232,49 @@ file-reporter/
 | [`csv`](https://crates.io/crates/csv) | Generación CSV |
 | [`chrono`](https://crates.io/crates/chrono) | Fechas y formatos |
 | [`anyhow`](https://crates.io/crates/anyhow) | Manejo ergonómico de errores |
+| [`tempfile`](https://crates.io/crates/tempfile) *(dev)* | Filesystem real en los tests |
+
+> ℹ️ `eframe`/`egui` están fijados en `0.30` (no la última disponible) a propósito: las
+> versiones posteriores traen renombres de API y cambios de tipos en los estilos, además de
+> un cambio de firma en el ciclo de render de `eframe::App` (0.34+). Ver el comentario en
+> `Cargo.toml` para el detalle.
+
+---
+
+## ✅ Tests
+
+El proyecto cuenta con una batería de tests automatizados (`cargo test`) que cubre escaneo,
+filtrado, exclusión de rutas, cancelación, generación de los tres formatos de reporte y
+saneamiento contra CSV injection. Varios usan [`tempfile`](https://crates.io/crates/tempfile)
+para operar sobre un filesystem real en vez de mockear, incluyendo la creación de *junctions*
+de Windows para simular symlinks sin requerir privilegios de administrador.
+
+```bash
+cargo test
+```
 
 ---
 
 ## 🐛 Manejo de errores
 
 - **Rutas inválidas o inexistentes:** mensaje de error claro, sin crash.
-- **Permisos denegados:** las carpetas inaccesibles se omiten silenciosamente y el escaneo continúa.
-- **Caracteres especiales en rutas (UTF-8):** soportados correctamente; los acentos y emojis se preservan en los tres reportes.
+- **Permisos denegados:** las carpetas inaccesibles se omiten silenciosamente, el escaneo continúa, y el resultado final avisa cuántos elementos quedaron fuera del reporte.
+- **Symlinks y junctions cíclicos:** se detectan y se omiten (salvo en la raíz, que se sigue una vez) para evitar recursión infinita.
+- **Caracteres especiales en rutas (UTF-8):** soportados correctamente, incluida la comparación case-insensitive de rutas excluidas a nivel Unicode (no solo ASCII) en Windows/macOS; los acentos y emojis se preservan en los tres reportes.
+- **Cancelación del usuario:** se distingue explícitamente de un error real (bandera compartida, no texto del mensaje) y se muestra en la GUI como un estado neutral, no como fallo.
+- **CSV injection:** los campos de texto libre que empiezan por `=`, `+`, `-`, `@`, tab o CR se neutralizan antes de escribirse en el CSV.
 - **GUI:** los errores se muestran en un panel rojo dentro de la ventana, sin cerrar la aplicación. Cualquier panic interno del worker se captura con `catch_unwind`.
 
 ---
 
 ## 🚧 Posibles mejoras futuras
 
-- [ ] Persistir las últimas rutas usadas entre ejecuciones.
+- [ ] Migración mayor a egui/eframe 0.35+ (ver nota en la sección de tecnologías).
 - [ ] Lista configurable de carpetas a excluir (`.git`, `node_modules`, etc.).
-- [ ] Toggle modo claro/oscuro.
+- [ ] Toggle manual de modo claro/oscuro (hoy sigue automáticamente el tema del sistema operativo).
 - [ ] Tamaño total de archivos en el resumen.
 - [ ] Vista previa del árbol antes de exportar.
 - [ ] Empaquetar como instalador `.msi` con `cargo-wix`.
-- [ ] Tests unitarios con `tempfile`.
 
 ---
 
