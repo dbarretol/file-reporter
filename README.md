@@ -15,6 +15,7 @@ Diseñada para ser **rápida**, **robusta** y **fácil de usar**, ofrece tanto u
   - **Markdown** con árbol jerárquico estilo `tree`.
   - **JSON** estructurado para integraciones.
 - 🎯 **Filtro por extensiones** — analiza solo los tipos de archivo que te interesan.
+- 📂 **Modo solo carpetas** — omite los archivos y genera reportes con únicamente la jerarquía de directorios.
 - 📅 **Metadatos completos** — nombre, extensión, tamaño en MB y en bytes exactos, fechas de creación y modificación (formato local + ISO-8601), ruta.
 - 🛡️ **Manejo robusto de errores** — sigue funcionando aunque haya carpetas sin permisos (y avisa cuántos elementos quedaron fuera del reporte), y detecta symlinks/junctions cíclicos sin colgarse.
 - 📈 **Barra de progreso granular con ETA**, que distingue la fase de escaneo de la de escritura de reportes.
@@ -77,7 +78,8 @@ Aparecerá una ventana donde podrás:
 1. Seleccionar la carpeta a escanear (escribiendo la ruta, usando "Examinar…", o arrastrándola directamente a la ventana).
 2. Definir una carpeta de salida personalizada (opcional).
 3. Especificar extensiones a filtrar, con presets rápidos.
-4. Pulsar **▶ Generar reportes** (o Enter desde cualquier campo) y monitorizar el progreso en tiempo real, con opción de **⏹ Cancelar** en cualquier momento.
+4. Marcar **📂 Solo carpeta (omitir archivos)** si solo quieres la jerarquía de directorios, sin analizar archivos.
+5. Pulsar **▶ Generar reportes** (o Enter desde cualquier campo) y monitorizar el progreso en tiempo real, con opción de **⏹ Cancelar** en cualquier momento.
 
 Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide confirmación antes de sobrescribirlos. Las rutas y extensiones usadas se recuerdan automáticamente para la próxima sesión.
 
@@ -94,6 +96,9 @@ Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide co
 # Especificar carpeta de salida personalizada
 ./target/release/file-reporter /ruta -e mp4 -o /ruta/reportes
 
+# Escanear solo la estructura de carpetas (omitir archivos)
+./target/release/file-reporter /ruta -d
+
 # En Windows con PowerShell
 .\target\release\file-reporter.exe "D:\MisDocumentos" -e pdf,docx -o "D:\reportes"
 ```
@@ -105,6 +110,7 @@ Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide co
 | `<PATH>` | Ruta de la carpeta a escanear | ✅ Sí |
 | `-e`, `--ext` | Extensiones a filtrar (separadas por coma o repetidas) | ❌ No |
 | `-o`, `--output` | Directorio donde guardar los reportes (por defecto: misma ruta de entrada) | ❌ No |
+| `-d`, `--dirs-only` | Solo escanear la estructura de carpetas (omitir archivos) | ❌ No |
 | `-h`, `--help` | Muestra la ayuda | — |
 | `-V`, `--version` | Muestra la versión | — |
 
@@ -119,6 +125,10 @@ Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide co
 ## 📁 Archivos generados
 
 Al finalizar, se generan **tres archivos** en la carpeta de salida:
+
+> 📂 **Modo solo carpetas** (`-d`/`--dirs-only` en CLI, checkbox en GUI): los archivos se
+> omiten por completo. `report.csv` queda solo con la cabecera (sin filas), y `report.md`/
+> `report.json` muestran únicamente la jerarquía de directorios, sin nodos de archivo.
 
 ### `report.csv`
 
