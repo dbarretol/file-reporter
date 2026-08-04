@@ -46,6 +46,9 @@ fn main() -> Result<()> {
     let output = parsed.output.clone().unwrap_or_else(|| input.clone());
     let extensions = parsed.normalized_extensions();
 
+    if parsed.dirs_only {
+        println!("📂 Modo: solo estructura de carpetas");
+    }
     if !extensions.is_empty() {
         println!("🎯 Filtrando extensiones: {:?}", extensions);
     }
@@ -57,6 +60,7 @@ fn main() -> Result<()> {
             input,
             output,
             extensions,
+            dirs_only: parsed.dirs_only,
         },
         None,
     )?;

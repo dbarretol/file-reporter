@@ -53,6 +53,7 @@ struct App {
     input_path: String,
     output_path: String,
     extensions: String,
+    dirs_only: bool,
     status: Status,
 
     // Comunicación con el worker
@@ -88,6 +89,7 @@ struct PersistedState {
     input_path: String,
     output_path: String,
     extensions: String,
+    dirs_only: bool,
 }
 
 const PERSIST_KEY: &str = eframe::APP_KEY;
@@ -100,6 +102,7 @@ impl App {
                 app.input_path = state.input_path;
                 app.output_path = state.output_path;
                 app.extensions = state.extensions;
+                app.dirs_only = state.dirs_only;
             }
         }
         app
@@ -160,19 +163,39 @@ const MUTED_LIGHT: egui::Color32 = egui::Color32::from_rgb(75, 85, 99);
 /// de uso ya tiene uno a mano — evita tener que enhebrar el tema como
 /// parámetro extra por todos los métodos `render_*`.
 fn accent_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { ACCENT_DARK } else { ACCENT_LIGHT }
+    if ui.visuals().dark_mode {
+        ACCENT_DARK
+    } else {
+        ACCENT_LIGHT
+    }
 }
 fn success_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { SUCCESS_DARK } else { SUCCESS_LIGHT }
+    if ui.visuals().dark_mode {
+        SUCCESS_DARK
+    } else {
+        SUCCESS_LIGHT
+    }
 }
 fn error_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { ERROR_DARK } else { ERROR_LIGHT }
+    if ui.visuals().dark_mode {
+        ERROR_DARK
+    } else {
+        ERROR_LIGHT
+    }
 }
 fn warning_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { WARNING_DARK } else { WARNING_LIGHT }
+    if ui.visuals().dark_mode {
+        WARNING_DARK
+    } else {
+        WARNING_LIGHT
+    }
 }
 fn muted_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { MUTED_DARK } else { MUTED_LIGHT }
+    if ui.visuals().dark_mode {
+        MUTED_DARK
+    } else {
+        MUTED_LIGHT
+    }
 }
 
 impl eframe::App for App {
@@ -319,6 +342,7 @@ impl eframe::App for App {
             input_path: self.input_path.clone(),
             output_path: self.output_path.clone(),
             extensions: self.extensions.clone(),
+            dirs_only: self.dirs_only,
         };
         eframe::set_value(storage, PERSIST_KEY, &state);
     }
@@ -383,7 +407,11 @@ impl App {
                 // Sugerencias rápidas
                 ui.add_space(4.0);
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new("Sugerencias:").color(muted_color(ui)).size(11.0));
+                    ui.label(
+                        egui::RichText::new("Sugerencias:")
+                            .color(muted_color(ui))
+                            .size(11.0),
+                    );
                     for preset in [
                         "pdf, docx, xlsx",
                         "jpg, png, gif",
@@ -401,6 +429,12 @@ impl App {
                         }
                     }
                 });
+
+                ui.add_space(8.0);
+                ui.add_enabled(
+                    enabled,
+                    egui::Checkbox::new(&mut self.dirs_only, "📂 Solo carpeta (omitir archivos)"),
+                );
             });
     }
 
@@ -558,7 +592,8 @@ impl App {
                 && self.pending_confirm.is_none()
                 && (!self.input_path.is_empty()
                     || !self.output_path.is_empty()
-                    || !self.extensions.is_empty());
+                    || !self.extensions.is_empty()
+                    || self.dirs_only);
             if ui
                 .add_enabled(
                     can_clear,
@@ -569,6 +604,7 @@ impl App {
                 self.input_path.clear();
                 self.output_path.clear();
                 self.extensions.clear();
+                self.dirs_only = false;
                 self.summary = None;
                 self.error = None;
                 self.progress = None;
@@ -689,7 +725,10 @@ impl App {
                     .inner_margin(egui::Margin::same(12.0))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.colored_label(success_color(ui), egui::RichText::new("✅").size(16.0));
+                            ui.colored_label(
+                                success_color(ui),
+                                egui::RichText::new("✅").size(16.0),
+                            );
                             ui.label(
                                 egui::RichText::new("Reportes generados correctamente")
                                     .strong()
@@ -822,6 +861,7 @@ impl App {
             input,
             output,
             extensions,
+            dirs_only: self.dirs_only,
         }
     }
 
@@ -1142,6 +1182,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("dropped.txt");
         std::fs::write(&file_path, "x").unwrap();
-        assert_eq!(dropped_path_to_input_dir(file_path), dir.path().to_path_buf());
+        assert_eq!(
+            dropped_path_to_input_dir(file_path),
+            dir.path().to_path_buf()
+        );
     }
 }

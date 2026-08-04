@@ -18,6 +18,10 @@ pub struct Cli {
     /// Directorio de salida (por defecto: la misma ruta de entrada).
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    /// Solo escanear la estructura de carpetas (omitir archivos).
+    #[arg(short = 'd', long = "dirs-only")]
+    pub dirs_only: bool,
 }
 
 impl Cli {
@@ -39,6 +43,7 @@ mod tests {
             path: PathBuf::from("."),
             extensions: extensions.into_iter().map(String::from).collect(),
             output: None,
+            dirs_only: false,
         }
     }
 

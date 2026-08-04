@@ -10,6 +10,7 @@ pub struct RunConfig {
     pub input: PathBuf,
     pub output: PathBuf,
     pub extensions: Vec<String>,
+    pub dirs_only: bool,
 }
 
 /// Reporte de progreso compartido entre el worker y la GUI.
@@ -103,6 +104,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     let tree = scanner::build_tree(
         &cfg.input,
         &cfg.extensions,
+        cfg.dirs_only,
         progress.as_ref().map(|p| &p.done),
         &excluded,
         cancel_flag,
@@ -189,6 +191,7 @@ mod tests {
             input: dir.path().join("no_existe"),
             output: dir.path().join("out"),
             extensions: vec![],
+            dirs_only: false,
         };
         let err = run(&cfg, None).unwrap_err();
         assert!(err.to_string().contains("no existe"));
@@ -203,6 +206,7 @@ mod tests {
             input: file_path,
             output: dir.path().join("out"),
             extensions: vec![],
+            dirs_only: false,
         };
         let err = run(&cfg, None).unwrap_err();
         assert!(err.to_string().contains("no es un directorio"));
@@ -221,6 +225,7 @@ mod tests {
             input,
             output: output.clone(),
             extensions: vec![],
+            dirs_only: false,
         };
         let summary = run(&cfg, None).unwrap();
 
@@ -230,6 +235,32 @@ mod tests {
         assert!(summary.md_path.exists());
         assert!(summary.json_path.exists());
         assert_eq!(summary.csv_path, output.join("report.csv"));
+    }
+
+    #[test]
+    fn run_dirs_only_omits_files_in_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        let output = dir.path().join("out");
+        fs::create_dir(&input).unwrap();
+        fs::create_dir(input.join("subfolder")).unwrap();
+        fs::write(input.join("a.txt"), "hello").unwrap();
+        fs::write(input.join("subfolder").join("b.txt"), "world").unwrap();
+
+        let cfg = RunConfig {
+            input,
+            output,
+            extensions: vec![],
+            dirs_only: true,
+        };
+        let summary = run(&cfg, None).unwrap();
+
+        assert_eq!(summary.files_count, 0);
+        assert!(summary.md_path.exists());
+        let md_content = fs::read_to_string(&summary.md_path).unwrap();
+        assert!(md_content.contains("subfolder"));
+        assert!(!md_content.contains("a.txt"));
+        assert!(!md_content.contains("b.txt"));
     }
 
     #[test]
@@ -243,6 +274,7 @@ mod tests {
             input,
             output: dir.path().join("out"),
             extensions: vec![],
+            dirs_only: false,
         };
         let progress = Progress::new();
         run(&cfg, Some(progress.clone())).unwrap();
@@ -269,6 +301,7 @@ mod tests {
             input,
             output,
             extensions: vec![],
+            dirs_only: false,
         };
         let progress = Progress::new();
         let result = run(&cfg, Some(progress.clone()));
@@ -280,5 +313,3 @@ mod tests {
         assert!(!progress.writing.load(Ordering::Relaxed));
     }
 }
-
-
