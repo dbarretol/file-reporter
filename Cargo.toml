@@ -27,7 +27,11 @@ rayon = "1.10"
 # y quedan fuera del alcance de esta tarea (ver tasks.md, punto 25).
 # 0.30 sí trae mejoras de plataforma sobre 0.28 sin requerir cambios de
 # código en este crate (build+test+clippy verificados sin tocar src/).
-eframe = { version = "0.30", default-features = false, features = ["default_fonts", "glow", "persistence"] }
+#
+# `x11` y `wayland` son imprescindibles en Linux: sin ellas (al desactivar
+# las default-features) winit no tiene backend de ventanas y el crate no
+# compila ("platform not supported by winit"). En Windows/macOS no afectan.
+eframe = { version = "0.30", default-features = false, features = ["default_fonts", "glow", "persistence", "x11", "wayland"] }
 egui = "0.30"
 rfd = "0.15"          # Diálogo nativo de selección de carpetas
 
