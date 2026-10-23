@@ -1,5 +1,8 @@
 # 📋 File Reporter
 
+[![CI](https://github.com/dbarretol/file-reporter/actions/workflows/ci.yml/badge.svg)](https://github.com/dbarretol/file-reporter/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 > Herramienta multiplataforma escrita en **Rust** que escanea recursivamente un directorio y genera reportes en **CSV, Markdown y JSON** sobre su estructura y contenido.
 
 Diseñada para ser **rápida**, **robusta** y **fácil de usar**, ofrece tanto una interfaz gráfica (GUI) amigable como una potente interfaz de línea de comandos (CLI) para integrarse en flujos de trabajo automatizados.
@@ -54,7 +57,7 @@ Diseñada para ser **rápida**, **robusta** y **fácil de usar**, ofrece tanto u
 Clona el repositorio y compila en modo **release** para máximo rendimiento:
 
 ```bash
-git clone https://github.com/tu-usuario/file-reporter.git
+git clone https://github.com/dbarretol/file-reporter.git
 cd file-reporter
 cargo build --release
 ```
@@ -296,7 +299,7 @@ Este proyecto se distribuye bajo la licencia **MIT**. Consulta el archivo [`LICE
 
 ## 👤 Autor
 
-Desarrollado como proyecto de aprendizaje en Rust.  
+Desarrollado por [@dbarretol](https://github.com/dbarretol) como proyecto de aprendizaje en Rust.  
 *Si te resulta útil, considera dejar una ⭐ en el repositorio.*
 
 ---
