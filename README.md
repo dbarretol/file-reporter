@@ -2,59 +2,95 @@
 
 [![CI](https://github.com/dbarretol/file-reporter/actions/workflows/ci.yml/badge.svg)](https://github.com/dbarretol/file-reporter/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 
-> Herramienta multiplataforma escrita en **Rust** que escanea recursivamente un directorio y genera reportes en **CSV, Markdown y JSON** sobre su estructura y contenido.
+**Escanea una carpeta y obtén, en segundos, un inventario completo de su contenido en CSV, Markdown y JSON.**
 
-Diseñada para ser **rápida**, **robusta** y **fácil de usar**, ofrece tanto una interfaz gráfica (GUI) amigable como una potente interfaz de línea de comandos (CLI) para integrarse en flujos de trabajo automatizados.
+File Reporter es una herramienta escrita en Rust con **interfaz gráfica** (para uso diario) y **línea de comandos** (para scripts y automatización). Recorre el directorio en paralelo y genera tres reportes con la estructura de carpetas y los metadatos de cada archivo.
 
----
+```text
+$ file-reporter C:\Demo\Proyecto
 
-## ✨ Características principales
+✅ Reportes generados correctamente:
+   📄 CSV:      C:\Demo\Proyecto\report.csv
+   📄 Markdown: C:\Demo\Proyecto\report.md
+   📄 JSON:     C:\Demo\Proyecto\report.json
 
-- 🚀 **Alto rendimiento** — escaneo paralelo con [`rayon`](https://crates.io/crates/rayon) para grandes volúmenes de archivos, en una única pasada por disco (sin doble recorrido para contar y luego escanear).
-- 🖥️ **Doble interfaz** — GUI nativa (con [`egui`](https://github.com/emilk/egui)) o línea de comandos (con [`clap`](https://crates.io/crates/clap)), compartiendo exactamente la misma lógica de escaneo.
-- 📊 **Tres formatos de salida**:
-  - **CSV** compatible con Excel (UTF-8 con BOM, separador `;`), protegido contra inyección de fórmulas.
-  - **Markdown** con árbol jerárquico estilo `tree`.
-  - **JSON** estructurado para integraciones.
-- 🎯 **Filtro por extensiones** — analiza solo los tipos de archivo que te interesan.
-- 📂 **Modo solo carpetas** — omite los archivos y genera reportes con únicamente la jerarquía de directorios.
-- 📅 **Metadatos completos** — nombre, extensión, tamaño en MB y en bytes exactos, fechas de creación y modificación (formato local + ISO-8601), ruta.
-- 🛡️ **Manejo robusto de errores** — sigue funcionando aunque haya carpetas sin permisos (y avisa cuántos elementos quedaron fuera del reporte), y detecta symlinks/junctions cíclicos sin colgarse.
-- 📈 **Barra de progreso granular con ETA**, que distingue la fase de escaneo de la de escritura de reportes.
-- ⏹️ **Cancelable en cualquier momento**, con vuelta a un estado utilizable en menos de un segundo.
-- 🖱️ **Drag & drop** de carpetas directamente sobre la ventana.
-- ♻️ **Recuerda** las últimas rutas y extensiones usadas entre sesiones.
-- ⚠️ **Confirma antes de sobrescribir** reportes de una corrida anterior.
-- ⌨️ **Enter para ejecutar** desde cualquier campo del formulario.
-- 🎨 **Tema claro/oscuro automático**, siguiendo la configuración del sistema operativo, con contraste ajustado (WCAG AA) en ambos.
-- ✅ **Cubierto por tests automatizados** (incluye pruebas con operaciones reales de filesystem vía `tempfile`, y con junctions de Windows para los casos de symlinks).
-- 🪟 **Multiplataforma** — Windows, Linux y macOS (probado principalmente en Windows).
+📊 Archivos procesados: 4
+⏱️  Tiempo: 1.98ms
+```
 
----
-
-## 🖼️ Capturas
-
-> *(Añade aquí tus screenshots de la GUI cuando los tengas. Por ejemplo:)*
->
-> ![GUI principal](docs/screenshot-main.png)
-> ![Reportes generados](docs/screenshot-results.png)
+```text
+C:\Demo\Proyecto
+├── docs
+│   └── manual.pdf
+├── src
+│   ├── utils
+│   │   └── helpers.rs
+│   └── main.rs
+└── README.md
+```
 
 ---
 
-## 📦 Requisitos
+## Contenido
 
-- **Rust** 1.76 o superior — instalable desde [rustup.rs](https://rustup.rs/).
-- **Linux únicamente:** dependencias del sistema para diálogos nativos:
+- [¿Para qué sirve?](#-para-qué-sirve)
+- [Características](#-características)
+- [Instalación](#-instalación)
+- [Uso](#-uso)
+- [Reportes generados](#-reportes-generados)
+- [Cómo funciona](#-cómo-funciona)
+- [Desarrollo](#-desarrollo)
+- [Hoja de ruta](#-hoja-de-ruta)
+- [Contribuciones](#-contribuciones)
+- [Licencia](#-licencia)
+
+---
+
+## 💡 ¿Para qué sirve?
+
+- **Auditar un disco o carpeta compartida:** qué hay, cuánto ocupa y cuándo se modificó, en una hoja de Excel.
+- **Documentar la estructura de un proyecto:** pega el árbol de `report.md` en tu documentación.
+- **Inventariar tipos concretos de archivo:** por ejemplo, todos los `pdf` y `docx` de una unidad.
+- **Alimentar otros procesos:** el JSON jerárquico se integra fácilmente en scripts o pipelines.
+
+---
+
+## ✨ Características
+
+**Reportes**
+- 📊 Tres formatos a la vez: **CSV** (listo para Excel), **Markdown** (árbol estilo `tree`) y **JSON** (jerárquico).
+- 📅 Metadatos por archivo: nombre, extensión, tamaño (MB y bytes exactos), fechas de creación y modificación, y ruta.
+- 🎯 **Filtro por extensiones** (`pdf, docx, jpg…`).
+- 📂 **Modo solo carpetas:** genera únicamente la jerarquía de directorios, sin archivos.
+
+**Rendimiento y robustez**
+- 🚀 Escaneo **paralelo** con [`rayon`](https://crates.io/crates/rayon), en una sola pasada por el disco.
+- 🛡️ Sigue funcionando ante carpetas sin permisos y avisa cuántos elementos se omitieron.
+- 🔁 Detecta symlinks y junctions cíclicos para no quedarse colgado.
+- 🔒 CSV protegido contra *formula injection*.
+
+**Interfaz gráfica**
+- 🖱️ Arrastra y suelta una carpeta sobre la ventana, o usa "Examinar…".
+- 📈 Barra de progreso con tiempo estimado y botón para **cancelar** en cualquier momento.
+- ⚠️ Pide confirmación antes de sobrescribir reportes anteriores.
+- ♻️ Recuerda rutas y opciones entre sesiones.
+- 🎨 Tema claro u oscuro según el sistema operativo.
+
+---
+
+## 📦 Instalación
+
+### Requisitos
+
+- [Rust](https://rustup.rs/) (toolchain estable).
+- **Solo en Linux:** dependencias del sistema para la GUI y los diálogos nativos:
   ```bash
   sudo apt install libgtk-3-dev libxkbcommon-dev
   ```
 
----
-
-## 🛠️ Compilación
-
-Clona el repositorio y compila en modo **release** para máximo rendimiento:
+### Compilar desde el código fuente
 
 ```bash
 git clone https://github.com/dbarretol/file-reporter.git
@@ -62,252 +98,251 @@ cd file-reporter
 cargo build --release
 ```
 
-El ejecutable se generará en `target/release/file-reporter` (o `file-reporter.exe` en Windows).
+El ejecutable queda en `target/release/file-reporter` (`file-reporter.exe` en Windows).
+
+> Probado principalmente en **Windows**; también compila en Linux y macOS.
 
 ---
 
 ## 🚀 Uso
 
-### Modo GUI (gráfico)
+El mismo ejecutable funciona en dos modos:
 
-Simplemente ejecuta el binario sin argumentos, o haz **doble clic** sobre el `.exe` en Windows:
+| Cómo lo ejecutas | Modo |
+|---|---|
+| Sin argumentos (o doble clic en el `.exe`) | 🖥️ Interfaz gráfica |
+| Con una ruta como argumento | ⌨️ Línea de comandos |
+
+### 🖥️ Interfaz gráfica
 
 ```bash
 ./target/release/file-reporter
 ```
 
-Aparecerá una ventana donde podrás:
+1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…" o arrástrala a la ventana.
+2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
+3. *(Opcional)* Escribe las **extensiones** a incluir o usa una de las sugerencias.
+4. *(Opcional)* Marca **Solo carpeta (omitir archivos)** para obtener solo la jerarquía de directorios.
+5. Pulsa **▶ Generar reportes** (o Enter).
 
-1. Seleccionar la carpeta a escanear (escribiendo la ruta, usando "Examinar…", o arrastrándola directamente a la ventana).
-2. Definir una carpeta de salida personalizada (opcional).
-3. Especificar extensiones a filtrar, con presets rápidos.
-4. Marcar **📂 Solo carpeta (omitir archivos)** si solo quieres la jerarquía de directorios, sin analizar archivos (el filtro de extensiones se desactiva en este modo).
-5. Pulsar **▶ Generar reportes** (o Enter desde cualquier campo) y monitorizar el progreso en tiempo real, con opción de **⏹ Cancelar** en cualquier momento.
-
-Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide confirmación antes de sobrescribirlos. Las rutas y extensiones usadas se recuerdan automáticamente para la próxima sesión.
-
-### Modo CLI (línea de comandos)
+### ⌨️ Línea de comandos
 
 ```bash
-# Escanear todo el contenido de un directorio
-./target/release/file-reporter /ruta/a/escanear
+# Todo el contenido de una carpeta
+file-reporter /ruta/a/escanear
 
-# Filtrar por extensiones (varias formas)
-./target/release/file-reporter /ruta -e txt -e jpg -e pdf
-./target/release/file-reporter /ruta --ext txt,jpg,png
+# Solo ciertas extensiones (separadas por coma o con -e repetido)
+file-reporter /ruta --ext pdf,docx
+file-reporter /ruta -e jpg -e png
 
-# Especificar carpeta de salida personalizada
-./target/release/file-reporter /ruta -e mp4 -o /ruta/reportes
+# Guardar los reportes en otra carpeta
+file-reporter /ruta -o /ruta/reportes
 
-# Escanear solo la estructura de carpetas (omitir archivos)
-./target/release/file-reporter /ruta -d
-
-# En Windows con PowerShell
-.\target\release\file-reporter.exe "D:\MisDocumentos" -e pdf,docx -o "D:\reportes"
+# Solo la estructura de carpetas
+file-reporter /ruta -d
 ```
 
-#### Argumentos disponibles
+En Windows (PowerShell):
 
-| Argumento | Descripción | Obligatorio |
-|-----------|-------------|-------------|
-| `<PATH>` | Ruta de la carpeta a escanear | ✅ Sí |
-| `-e`, `--ext` | Extensiones a filtrar (separadas por coma o repetidas) | ❌ No |
-| `-o`, `--output` | Directorio donde guardar los reportes (por defecto: misma ruta de entrada) | ❌ No |
-| `-d`, `--dirs-only` | Solo escanear la estructura de carpetas (omitir archivos). Incompatible con `-e` | ❌ No |
-| `-h`, `--help` | Muestra la ayuda | — |
-| `-V`, `--version` | Muestra la versión | — |
+```powershell
+.\file-reporter.exe "D:\MisDocumentos" -e pdf,docx -o "D:\reportes"
+```
 
-> ⚠️ **Semántica de extensiones:** el filtro usa solo la última parte del nombre tras el
-> **último** punto. Para `foo.tar.gz` la extensión es `gz`, no `tar.gz` — filtrar por `tar`
-> no lo incluirá. Los archivos sin ningún punto en el nombre (`LICENSE`, `Makefile`, etc.)
-> no tienen extensión: quedan **excluidos** de cualquier filtro no vacío, aunque sí aparecen
-> cuando el filtro está vacío (se incluye todo).
+| Opción | Descripción |
+|---|---|
+| `<PATH>` | Carpeta a escanear **(obligatorio)** |
+| `-e`, `--ext` | Extensiones a incluir. Sin esta opción se incluyen todas |
+| `-o`, `--output` | Carpeta de salida (por defecto: la carpeta escaneada) |
+| `-d`, `--dirs-only` | Solo estructura de carpetas. No se puede combinar con `-e` |
+| `-h`, `--help` / `-V`, `--version` | Ayuda / versión |
+
+> **Sobre las extensiones:** se usa lo que va tras el **último** punto del nombre. `foo.tar.gz` tiene extensión `gz`, no `tar.gz`. Los archivos sin punto (`LICENSE`, `Makefile`) no tienen extensión y quedan fuera de cualquier filtro.
 
 ---
 
-## 📁 Archivos generados
+## 📁 Reportes generados
 
-Al finalizar, se generan **tres archivos** en la carpeta de salida:
+Cada ejecución crea tres archivos en la carpeta de salida:
 
-> 📂 **Modo solo carpetas** (`-d`/`--dirs-only` en CLI, checkbox en GUI): los archivos se
-> omiten por completo. `report.csv` queda solo con la cabecera (sin filas), y `report.md`/
-> `report.json` muestran únicamente la jerarquía de directorios, sin nodos de archivo.
+| Archivo | Contenido | Ideal para |
+|---|---|---|
+| `report.csv` | Una fila por archivo con todos sus metadatos | Excel, Pandas, hojas de cálculo |
+| `report.md` | Árbol de carpetas y archivos estilo `tree` | Documentación, READMEs |
+| `report.json` | Árbol completo con metadatos | Scripts e integraciones |
 
-### `report.csv`
+En **modo solo carpetas**, `report.md` y `report.json` contienen únicamente directorios y `report.csv` queda solo con la cabecera.
 
-Tabla plana con un registro por archivo, ideal para abrir en Excel o procesar con Pandas:
+<details>
+<summary><b>📊 report.csv</b>: columnas</summary>
 
-| Campo | Descripción |
-|-------|-------------|
-| `name` | Nombre del archivo (sin extensión) |
-| `extension` | Extensión (sin punto) |
-| `size_mb` | Tamaño en MB con 3 decimales (muestra "0.0" para archivos <524 bytes) |
-| `size_bytes` | Tamaño exacto en bytes, para ordenar/sumar sin perder precisión |
-| `created` | Fecha de creación (DD/MM/AAAA) |
-| `modified` | Fecha de última modificación (DD/MM/AAAA) |
-| `created_iso` | Fecha y hora de creación en ISO-8601 (`2024-03-15T14:23:01+00:00`) |
-| `modified_iso` | Fecha y hora de modificación en ISO-8601 |
-| `directory` | Ruta del directorio padre |
-| `full_path` | Ruta completa del archivo |
+<br>
 
-> 💡 **Compatible con Excel:** UTF-8 con BOM y separador `;` para evitar problemas de codificación y alineación de columnas.
->
-> 📅 **Sobre las fechas:** `created`/`modified` usan `DD/MM/AAAA` porque es el formato que
-> Excel reconoce sin configuración adicional, pero como texto no ordena cronológicamente y
-> descarta la hora. Las columnas `*_iso` llevan fecha+hora completas en un formato que sí
-> ordena como texto y es estándar para procesar con scripts.
->
-> 🛡️ **Protegido contra CSV injection:** si un nombre de archivo o ruta empieza por `=`, `+`,
-> `-`, `@`, tabulador o retorno de carro, se antepone un apóstrofo al escribirlo en el CSV para
-> que Excel lo trate como texto literal en vez de evaluarlo como fórmula.
+UTF-8 con BOM y separador `;`, para que Excel lo abra correctamente sin configurar nada.
 
-### `report.md`
+| Columna | Descripción |
+|---|---|
+| `name` | Nombre del archivo, sin extensión |
+| `extension` | Extensión, sin punto |
+| `size_mb` | Tamaño en MB (hasta 3 decimales) |
+| `size_bytes` | Tamaño exacto en bytes |
+| `created` / `modified` | Fechas en `DD/MM/AAAA` (formato que Excel reconoce directamente) |
+| `created_iso` / `modified_iso` | Fecha y hora en ISO-8601, ordenables como texto |
+| `directory` | Carpeta que contiene el archivo |
+| `full_path` | Ruta completa |
 
-Árbol jerárquico estilo `tree` listo para incluir en documentación:
+```text
+name;extension;size_mb;size_bytes;created;modified;created_iso;modified_iso;directory;full_path
+manual;pdf;1.27;1331200;23/10/2026;23/10/2026;2026-10-23T04:42:45.034591400+00:00;...;C:\Demo\Proyecto\docs;C:\Demo\Proyecto\docs\manual.pdf
+```
+
+Si un nombre o ruta empieza por `=`, `+`, `-`, `@`, tabulador o retorno de carro, se le antepone un apóstrofo para que Excel no lo ejecute como fórmula.
+
+</details>
+
+<details>
+<summary><b>🌳 report.md</b>: árbol de directorios</summary>
+
+<br>
 
 ````markdown
 # 📋 Estructura de Directorios
 
 ```
-D:\MiCarpeta
-├── carpeta1
-│   └── archivo1.mp4
-└── carpeta2
-    ├── archivo2.txt
-    └── subcarpeta
-        └── archivo3.jpg
+C:\Demo\Proyecto
+├── docs
+│   └── manual.pdf
+├── src
+│   ├── utils
+│   │   └── helpers.rs
+│   └── main.rs
+└── README.md
 ```
 ````
 
-### `report.json`
+</details>
 
-Estructura jerárquica completa, útil para automatización e integraciones:
+<details>
+<summary><b>🧩 report.json</b>: estructura jerárquica</summary>
+
+<br>
 
 ```json
 {
   "type": "directory",
-  "name": "MiCarpeta",
-  "path": "D:\\MiCarpeta",
+  "name": "Proyecto",
+  "path": "C:\\Demo\\Proyecto",
   "children": [
     {
-      "type": "file",
-      "name": "documento.pdf",
-      "path": "D:\\MiCarpeta\\documento.pdf",
-      "size_mb": 1.234,
-      "size_bytes": 1294237,
-      "extension": "pdf",
-      "created": "2024-03-15T14:23:01Z",
-      "modified": "2024-03-15T14:23:01Z"
+      "type": "directory",
+      "name": "docs",
+      "path": "C:\\Demo\\Proyecto\\docs",
+      "children": [
+        {
+          "type": "file",
+          "name": "manual.pdf",
+          "path": "C:\\Demo\\Proyecto\\docs\\manual.pdf",
+          "size_mb": 1.26953125,
+          "size_bytes": 1331200,
+          "extension": "pdf",
+          "created": "2026-10-23T04:42:45.034591400Z",
+          "modified": "2026-10-23T04:42:45.034591400Z"
+        }
+      ]
     }
   ]
 }
 ```
 
+</details>
+
 ---
 
-## 🏗️ Arquitectura del proyecto
+## 🔧 Cómo funciona
 
-```
-file-reporter/
-├── Cargo.toml
-└── src/
-    ├── main.rs          # Punto de entrada: decide CLI vs GUI
-    ├── cli.rs           # Definición de argumentos con clap
-    ├── gui.rs           # Interfaz gráfica con egui/eframe
-    ├── runner.rs        # Lógica común compartida CLI ↔ GUI
-    ├── scanner.rs       # Escaneo paralelo con rayon
-    ├── models.rs        # Estructuras de datos (Node, FileRecord)
-    └── reporters/
-        ├── mod.rs
-        ├── csv.rs       # Generación CSV (BOM + ;)
-        ├── markdown.rs  # Árbol estilo `tree`
-        └── json.rs      # JSON pretty-printed
+CLI y GUI comparten exactamente la misma lógica; solo cambia la forma de recibir la configuración y de mostrar el progreso.
+
+```text
+  CLI (clap) ──┐
+               ├──► runner ──► scanner (rayon, en paralelo) ──► árbol en memoria ──► reporters ──► CSV / MD / JSON
+  GUI (egui) ──┘       ▲
+                       └── progreso, cancelación y elementos omitidos (atómicos compartidos)
 ```
 
-### Diseño modular
+```text
+src/
+├── main.rs          # Punto de entrada: decide entre CLI y GUI
+├── cli.rs           # Argumentos de línea de comandos (clap)
+├── gui.rs           # Interfaz gráfica (egui/eframe)
+├── runner.rs        # Flujo común: escanear → escribir reportes
+├── scanner.rs       # Recorrido paralelo del directorio
+├── models.rs        # Node (árbol) y FileRecord (fila del CSV)
+└── reporters/
+    ├── csv.rs       # CSV para Excel (BOM + ;)
+    ├── markdown.rs  # Árbol estilo tree
+    └── json.rs      # JSON con formato legible
+```
 
-- **`runner.rs`** centraliza la lógica de ejecución, permitiendo que CLI y GUI compartan exactamente el mismo flujo. Expone un `Progress` compartido (`Arc<...>` con varios `Atomic*`) que reporta contador de archivos, fase actual (escaneando/escribiendo), elementos omitidos y una bandera de cancelación.
-- **`scanner.rs`** usa `rayon` para procesar directorios en paralelo en una única pasada, con manejo robusto de errores por archivo (las carpetas sin permisos se omiten en vez de detener todo el escaneo) y detección de symlinks/junctions vía `symlink_metadata` para evitar recursión infinita en ciclos — salvo en la raíz elegida por el usuario, que sí se sigue.
-- **`gui.rs`** ejecuta el escaneo en un hilo separado (con pila ampliada y `catch_unwind` para que un panic interno no tumbe la app) con comunicación vía `mpsc::channel` y el `Progress` compartido, manteniendo la UI 100% responsive; distingue cancelación de error real consultando la bandera compartida, no el texto del mensaje.
-- **`reporters/csv.rs`** sanea los campos de texto libre antes de escribirlos para neutralizar CSV injection.
+<details>
+<summary><b>Detalles de implementación</b></summary>
+
+<br>
+
+- **Una sola pasada por el disco:** no se cuentan los archivos antes de escanearlos. El progreso se reporta en vivo mientras se recorre el árbol.
+- **Symlinks y junctions:** se usa `symlink_metadata` para no seguir enlaces y evitar ciclos. La carpeta raíz elegida por el usuario sí se sigue aunque sea un enlace (por ejemplo, carpetas de OneDrive).
+- **Errores por elemento:** una carpeta sin permisos se omite y se contabiliza; no detiene el escaneo.
+- **GUI siempre responsiva:** el escaneo corre en un hilo aparte con pila ampliada y `catch_unwind`, de modo que un panic interno se muestra como error y no cierra la aplicación. La cancelación se distingue de un error real mediante una bandera compartida.
+- **Rutas Unicode:** acentos y emojis se conservan en los tres reportes, y la exclusión de los propios reportes compara rutas sin distinguir mayúsculas, también fuera de ASCII.
+
+</details>
+
+### Tecnologías
+
+[`clap`](https://crates.io/crates/clap) (CLI) ·
+[`egui`/`eframe`](https://github.com/emilk/egui) (GUI) ·
+[`rfd`](https://crates.io/crates/rfd) (diálogos nativos) ·
+[`rayon`](https://crates.io/crates/rayon) (paralelismo) ·
+[`serde`](https://crates.io/crates/serde) + [`serde_json`](https://crates.io/crates/serde_json) ·
+[`csv`](https://crates.io/crates/csv) ·
+[`chrono`](https://crates.io/crates/chrono) ·
+[`anyhow`](https://crates.io/crates/anyhow)
+
+> `egui`/`eframe` están fijados en la versión `0.30` a propósito: las siguientes traen cambios de API que requieren una migración aparte (ver el comentario en `Cargo.toml`).
 
 ---
 
-## 🧰 Tecnologías utilizadas
-
-| Crate | Uso |
-|-------|-----|
-| [`clap`](https://crates.io/crates/clap) | Parseo de argumentos CLI |
-| [`eframe`](https://crates.io/crates/eframe) / [`egui`](https://crates.io/crates/egui) | Interfaz gráfica nativa |
-| [`rfd`](https://crates.io/crates/rfd) | Diálogo nativo de selección de carpetas |
-| [`rayon`](https://crates.io/crates/rayon) | Paralelismo data-parallel |
-| [`serde`](https://crates.io/crates/serde) + [`serde_json`](https://crates.io/crates/serde_json) | Serialización JSON |
-| [`csv`](https://crates.io/crates/csv) | Generación CSV |
-| [`chrono`](https://crates.io/crates/chrono) | Fechas y formatos |
-| [`anyhow`](https://crates.io/crates/anyhow) | Manejo ergonómico de errores |
-| [`tempfile`](https://crates.io/crates/tempfile) *(dev)* | Filesystem real en los tests |
-
-> ℹ️ `eframe`/`egui` están fijados en `0.30` (no la última disponible) a propósito: las
-> versiones posteriores traen renombres de API y cambios de tipos en los estilos, además de
-> un cambio de firma en el ciclo de render de `eframe::App` (0.34+). Ver el comentario en
-> `Cargo.toml` para el detalle.
-
----
-
-## ✅ Tests
-
-El proyecto cuenta con una batería de tests automatizados (`cargo test`) que cubre escaneo,
-filtrado, exclusión de rutas, cancelación, generación de los tres formatos de reporte y
-saneamiento contra CSV injection. Varios usan [`tempfile`](https://crates.io/crates/tempfile)
-para operar sobre un filesystem real en vez de mockear, incluyendo la creación de *junctions*
-de Windows para simular symlinks sin requerir privilegios de administrador.
+## 🧪 Desarrollo
 
 ```bash
-cargo test
+cargo test                          # tests
+cargo fmt --check                   # formato
+cargo clippy --all-targets -- -D warnings   # lint
 ```
 
----
+Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)) y cubren escaneo, filtros, modo solo carpetas, cancelación, los tres formatos de salida y la protección del CSV. En Windows también crean *junctions* para probar el manejo de enlaces sin necesidad de permisos de administrador.
 
-## 🐛 Manejo de errores
-
-- **Rutas inválidas o inexistentes:** mensaje de error claro, sin crash.
-- **Permisos denegados:** las carpetas inaccesibles se omiten silenciosamente, el escaneo continúa, y el resultado final avisa cuántos elementos quedaron fuera del reporte.
-- **Symlinks y junctions cíclicos:** se detectan y se omiten (salvo en la raíz, que se sigue una vez) para evitar recursión infinita.
-- **Caracteres especiales en rutas (UTF-8):** soportados correctamente, incluida la comparación case-insensitive de rutas excluidas a nivel Unicode (no solo ASCII) en Windows/macOS; los acentos y emojis se preservan en los tres reportes.
-- **Cancelación del usuario:** se distingue explícitamente de un error real (bandera compartida, no texto del mensaje) y se muestra en la GUI como un estado neutral, no como fallo.
-- **CSV injection:** los campos de texto libre que empiezan por `=`, `+`, `-`, `@`, tab o CR se neutralizan antes de escribirse en el CSV.
-- **GUI:** los errores se muestran en un panel rojo dentro de la ventana, sin cerrar la aplicación. Cualquier panic interno del worker se captura con `catch_unwind`.
+Cada push a `master` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu.
 
 ---
 
-## 🚧 Posibles mejoras futuras
+## 🧭 Hoja de ruta
 
-- [ ] Migración mayor a egui/eframe 0.35+ (ver nota en la sección de tecnologías).
-- [ ] Lista configurable de carpetas a excluir (`.git`, `node_modules`, etc.).
-- [ ] Toggle manual de modo claro/oscuro (hoy sigue automáticamente el tema del sistema operativo).
-- [ ] Tamaño total de archivos en el resumen.
+- [ ] Lista configurable de carpetas a excluir (`.git`, `node_modules`, …).
+- [ ] Tamaño total en el resumen final.
 - [ ] Vista previa del árbol antes de exportar.
-- [ ] Empaquetar como instalador `.msi` con `cargo-wix`.
+- [ ] Selector manual de tema claro/oscuro.
+- [ ] Binarios precompilados en *Releases* e instalador `.msi`.
+- [ ] Migración a egui/eframe 0.35+.
+
+---
+
+## 🤝 Contribuciones
+
+Las contribuciones son bienvenidas. Para cambios grandes, abre primero un *issue* para comentar la propuesta. Después, haz un fork, crea una rama y envía un *pull request* describiendo los cambios.
 
 ---
 
 ## 📝 Licencia
 
-Este proyecto se distribuye bajo la licencia **MIT**. Consulta el archivo [`LICENSE`](LICENSE) para más detalles.
+Distribuido bajo la licencia **MIT**. Consulta [`LICENSE`](LICENSE).
 
----
-
-## 👤 Autor
-
-Desarrollado por [@dbarretol](https://github.com/dbarretol) como proyecto de aprendizaje en Rust.  
-*Si te resulta útil, considera dejar una ⭐ en el repositorio.*
-
----
-
-## 🙋 Contribuciones
-
-Las contribuciones son bienvenidas. Para cambios mayores:
-
-1. Abre un issue describiendo la propuesta.
-2. Haz un fork y crea una rama para tu feature.
-3. Envía un pull request con descripción clara de los cambios.
+Desarrollado por [@dbarretol](https://github.com/dbarretol) como proyecto de aprendizaje en Rust. Si te resulta útil, deja una ⭐.
