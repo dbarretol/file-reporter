@@ -78,7 +78,7 @@ Aparecerá una ventana donde podrás:
 1. Seleccionar la carpeta a escanear (escribiendo la ruta, usando "Examinar…", o arrastrándola directamente a la ventana).
 2. Definir una carpeta de salida personalizada (opcional).
 3. Especificar extensiones a filtrar, con presets rápidos.
-4. Marcar **📂 Solo carpeta (omitir archivos)** si solo quieres la jerarquía de directorios, sin analizar archivos.
+4. Marcar **📂 Solo carpeta (omitir archivos)** si solo quieres la jerarquía de directorios, sin analizar archivos (el filtro de extensiones se desactiva en este modo).
 5. Pulsar **▶ Generar reportes** (o Enter desde cualquier campo) y monitorizar el progreso en tiempo real, con opción de **⏹ Cancelar** en cualquier momento.
 
 Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide confirmación antes de sobrescribirlos. Las rutas y extensiones usadas se recuerdan automáticamente para la próxima sesión.
@@ -110,7 +110,7 @@ Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide co
 | `<PATH>` | Ruta de la carpeta a escanear | ✅ Sí |
 | `-e`, `--ext` | Extensiones a filtrar (separadas por coma o repetidas) | ❌ No |
 | `-o`, `--output` | Directorio donde guardar los reportes (por defecto: misma ruta de entrada) | ❌ No |
-| `-d`, `--dirs-only` | Solo escanear la estructura de carpetas (omitir archivos) | ❌ No |
+| `-d`, `--dirs-only` | Solo escanear la estructura de carpetas (omitir archivos). Incompatible con `-e` | ❌ No |
 | `-h`, `--help` | Muestra la ayuda | — |
 | `-V`, `--version` | Muestra la versión | — |
 
