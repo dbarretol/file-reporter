@@ -20,7 +20,8 @@ pub struct Cli {
     pub output: Option<PathBuf>,
 
     /// Solo escanear la estructura de carpetas (omitir archivos).
-    #[arg(short = 'd', long = "dirs-only")]
+    /// Incompatible con `--ext`, que no tendría efecto.
+    #[arg(short = 'd', long = "dirs-only", conflicts_with = "extensions")]
     pub dirs_only: bool,
 }
 
@@ -63,5 +64,11 @@ mod tests {
     fn normalized_extensions_empty_stays_empty() {
         let cli = cli_with(vec![]);
         assert!(cli.normalized_extensions().is_empty());
+    }
+
+    #[test]
+    fn dirs_only_conflicts_with_ext() {
+        assert!(Cli::try_parse_from(["file-reporter", ".", "-d", "-e", "txt"]).is_err());
+        assert!(Cli::try_parse_from(["file-reporter", ".", "-d"]).is_ok());
     }
 }

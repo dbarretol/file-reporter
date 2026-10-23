@@ -141,6 +141,15 @@ fn build_tree_inner(
         .unwrap_or_else(|| path.display().to_string());
 
     if metadata.is_dir() {
+        // En modo solo carpetas el progreso cuenta carpetas (la raíz no, igual
+        // que en `count_dirs`), para que el contador en vivo coincida con el
+        // total final del resumen.
+        if dirs_only && !is_root {
+            if let Some(c) = counter {
+                c.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
         // Recolectamos rutas hijas, omitiendo las excluidas (reportes propios)
         let entries: Vec<PathBuf> = match fs::read_dir(path) {
             Ok(rd) => rd
@@ -206,14 +215,9 @@ fn build_tree_inner(
         })
     } else {
         if dirs_only {
-            // Los archivos no aparecen en el árbol/reporte final en este modo,
-            // pero seguimos incrementando el contador de progreso al tocarlos
-            // (mismo coste de I/O que el modo normal): si no, la GUI se queda
-            // congelada en "0 archivos encontrados…" durante todo el escaneo,
-            // sin ninguna señal de que sigue trabajando.
-            if let Some(c) = counter {
-                c.fetch_add(1, Ordering::Relaxed);
-            }
+            // Los archivos no aparecen en el árbol/reporte final en este modo
+            // (el padre los descarta) ni cuentan para el progreso, que en
+            // este modo cuenta carpetas.
             return Ok(Node::File {
                 name: name.clone(),
                 path: path.to_path_buf(),
@@ -253,6 +257,18 @@ fn build_tree_inner(
             created: metadata.created().ok().and_then(to_datetime),
             modified: metadata.modified().ok().and_then(to_datetime),
         })
+    }
+}
+
+/// Cuenta las carpetas del árbol, sin incluir la raíz.
+pub fn count_dirs(node: &Node) -> usize {
+    match node {
+        Node::Directory { children, .. } => children
+            .iter()
+            .filter(|c| c.is_dir())
+            .map(|c| 1 + count_dirs(c))
+            .sum(),
+        Node::File { .. } => 0,
     }
 }
 
@@ -375,6 +391,7 @@ mod tests {
         let mut records = Vec::new();
         flatten_to_records(&tree, &mut records);
         assert!(records.is_empty());
+        assert_eq!(count_dirs(&tree), 2);
     }
 
     #[test]

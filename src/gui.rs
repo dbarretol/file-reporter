@@ -84,7 +84,11 @@ const UI_ERROR_TTL: std::time::Duration = std::time::Duration::from_secs(5);
 /// Único subconjunto de `App` que se persiste entre sesiones (`eframe`
 /// "persistence"): las rutas y extensiones tecleadas, no el estado de una
 /// corrida en curso.
+/// `#[serde(default)]`: un estado guardado por una versión anterior (sin
+/// algún campo nuevo, p. ej. `dirs_only`) sigue cargándose con el valor por
+/// defecto para ese campo, en vez de fallar y perder todo lo recordado.
 #[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 struct PersistedState {
     input_path: String,
     output_path: String,
@@ -357,6 +361,8 @@ impl App {
         // usuario podría seguir editando rutas/extensiones "por debajo" del
         // diálogo mientras lo tiene abierto.
         let enabled = self.status != Status::Running && self.pending_confirm.is_none();
+        // En modo solo carpetas las extensiones no tienen efecto.
+        let ext_enabled = enabled && !self.dirs_only;
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12.0))
@@ -392,11 +398,12 @@ impl App {
                 ui.label(egui::RichText::new("🎯  Extensiones (separadas por coma)").size(12.0));
                 let ext_width = ui.available_width().max(120.0);
                 ui.add_enabled(
-                    enabled,
+                    ext_enabled,
                     egui::TextEdit::singleline(&mut self.extensions)
                         .hint_text("pdf, docx, jpg  (vacío = todas)")
                         .desired_width(ext_width),
                 )
+                .on_disabled_hover_text("Sin efecto en modo solo carpetas.")
                 .on_hover_text(
                     "Solo la última parte tras el último punto cuenta como extensión: \
                      \"foo.tar.gz\" se filtra con \"gz\", no con \"tar.gz\". \
@@ -420,7 +427,7 @@ impl App {
                     ] {
                         if ui
                             .add_enabled(
-                                enabled,
+                                ext_enabled,
                                 egui::Button::new(egui::RichText::new(preset).size(11.0)).small(),
                             )
                             .clicked()
@@ -631,6 +638,18 @@ impl App {
         // las ramas animadas de abajo.
         let running = self.status == Status::Running;
         let writing = running && p.writing.load(Ordering::Relaxed);
+        // En modo solo carpetas el contador cuenta carpetas, no archivos. Con
+        // la corrida terminada manda el modo con que se hizo (el checkbox ya
+        // puede haber cambiado desde entonces).
+        let dirs_only = self
+            .summary
+            .as_ref()
+            .map_or(self.dirs_only, |s| s.dirs_only);
+        let (noun, suffix) = if dirs_only {
+            ("carpetas", "as")
+        } else {
+            ("archivos", "os")
+        };
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12.0))
@@ -670,7 +689,7 @@ impl App {
 
                     ui.add_space(4.0);
                     ui.label(
-                        egui::RichText::new(format!("{done} / {total} archivos procesados"))
+                        egui::RichText::new(format!("{done} / {total} {noun} procesad{suffix}"))
                             .color(muted_color(ui))
                             .size(11.0),
                     );
@@ -682,7 +701,7 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.spinner();
                         ui.label(
-                            egui::RichText::new(format!("{done} archivos encontrados…"))
+                            egui::RichText::new(format!("{done} {noun} encontrad{suffix}…"))
                                 .color(muted_color(ui))
                                 .size(12.0),
                         );
@@ -692,7 +711,7 @@ impl App {
                     // total: no hay barra que mostrar, solo el conteo final
                     // congelado, sin animación.
                     ui.label(
-                        egui::RichText::new(format!("{done} archivos procesados"))
+                        egui::RichText::new(format!("{done} {noun} procesad{suffix}"))
                             .color(muted_color(ui))
                             .size(11.0),
                     );
@@ -737,10 +756,14 @@ impl App {
                             );
                         });
                         ui.add_space(6.0);
-                        ui.label(format!(
-                            "📊 Total de archivos procesados: {}",
-                            s.files_count
-                        ));
+                        if s.dirs_only {
+                            ui.label(format!("📊 Total de carpetas procesadas: {}", s.dirs_count));
+                        } else {
+                            ui.label(format!(
+                                "📊 Total de archivos procesados: {}",
+                                s.files_count
+                            ));
+                        }
                         if s.skipped_count > 0 {
                             ui.colored_label(
                                 warning_color(ui),
@@ -850,12 +873,17 @@ impl App {
         } else {
             PathBuf::from(clean_path_input(&self.output_path))
         };
-        let extensions: Vec<String> = self
-            .extensions
-            .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
-            .map(|s| s.trim().trim_start_matches('.').to_lowercase())
-            .filter(|s| !s.is_empty())
-            .collect();
+        // El texto de extensiones se conserva en el formulario, pero en modo
+        // solo carpetas no se envía (igual que la CLI, que rechaza `-d -e`).
+        let extensions: Vec<String> = if self.dirs_only {
+            Vec::new()
+        } else {
+            self.extensions
+                .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+                .map(|s| s.trim().trim_start_matches('.').to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
 
         RunConfig {
             input,

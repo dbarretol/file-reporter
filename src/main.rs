@@ -69,7 +69,11 @@ fn main() -> Result<()> {
     println!("   📄 CSV:      {}", summary.csv_path.display());
     println!("   📄 Markdown: {}", summary.md_path.display());
     println!("   📄 JSON:     {}", summary.json_path.display());
-    println!("\n📊 Archivos procesados: {}", summary.files_count);
+    if summary.dirs_only {
+        println!("\n📊 Carpetas procesadas: {}", summary.dirs_count);
+    } else {
+        println!("\n📊 Archivos procesados: {}", summary.files_count);
+    }
     if summary.skipped_count > 0 {
         println!(
             "⚠️  {} elementos no accesibles fueron omitidos",

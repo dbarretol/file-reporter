@@ -56,6 +56,10 @@ pub struct RunSummary {
     pub md_path: PathBuf,
     pub json_path: PathBuf,
     pub files_count: usize,
+    /// Carpetas del árbol reportado (sin contar la raíz).
+    pub dirs_count: usize,
+    /// Si la corrida fue en modo solo carpetas (para elegir qué conteo mostrar).
+    pub dirs_only: bool,
     /// Carpetas/archivos que no se pudieron leer (permisos, etc.) y por lo
     /// tanto no aparecen en el reporte, aunque existan en disco.
     pub skipped_count: usize,
@@ -118,10 +122,16 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     // Fase 3: aplanar a registros para CSV (operación en memoria, sin I/O)
     let mut records = Vec::new();
     scanner::flatten_to_records(&tree, &mut records);
+    let dirs_count = scanner::count_dirs(&tree);
 
-    // Asegurar que el contador refleje la realidad final
+    // Asegurar que el contador refleje la realidad final (en modo solo
+    // carpetas el progreso cuenta carpetas, no archivos)
     if let Some(p) = &progress {
-        let final_count = records.len();
+        let final_count = if cfg.dirs_only {
+            dirs_count
+        } else {
+            records.len()
+        };
         p.done.store(final_count, Ordering::Relaxed);
         if p.total.load(Ordering::Relaxed) < final_count {
             p.total.store(final_count, Ordering::Relaxed);
@@ -170,6 +180,8 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         md_path,
         json_path,
         files_count: records.len(),
+        dirs_count,
+        dirs_only: cfg.dirs_only,
         skipped_count,
     })
 }
@@ -256,6 +268,8 @@ mod tests {
         let summary = run(&cfg, None).unwrap();
 
         assert_eq!(summary.files_count, 0);
+        assert_eq!(summary.dirs_count, 1);
+        assert!(summary.dirs_only);
         assert!(summary.md_path.exists());
         let md_content = fs::read_to_string(&summary.md_path).unwrap();
         assert!(md_content.contains("subfolder"));
