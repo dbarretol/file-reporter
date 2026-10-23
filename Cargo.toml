@@ -2,6 +2,12 @@
 name = "file-reporter"
 version = "0.2.0"
 edition = "2021"
+description = "Fast CLI + GUI to scan folders and generate CSV, Markdown and JSON reports"
+license = "MIT"
+repository = "https://github.com/dbarretol/file-reporter"
+readme = "README.md"
+keywords = ["cli", "gui", "filesystem", "report", "directory"]
+categories = ["command-line-utilities", "filesystem"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
