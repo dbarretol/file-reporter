@@ -10,6 +10,7 @@ pub struct RunConfig {
     pub input: PathBuf,
     pub output: PathBuf,
     pub extensions: Vec<String>,
+    pub dirs_only: bool,
 }
 
 /// Reporte de progreso compartido entre el worker y la GUI.
@@ -55,6 +56,10 @@ pub struct RunSummary {
     pub md_path: PathBuf,
     pub json_path: PathBuf,
     pub files_count: usize,
+    /// Carpetas del árbol reportado (sin contar la raíz).
+    pub dirs_count: usize,
+    /// Si la corrida fue en modo solo carpetas (para elegir qué conteo mostrar).
+    pub dirs_only: bool,
     /// Carpetas/archivos que no se pudieron leer (permisos, etc.) y por lo
     /// tanto no aparecen en el reporte, aunque existan en disco.
     pub skipped_count: usize,
@@ -103,6 +108,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     let tree = scanner::build_tree(
         &cfg.input,
         &cfg.extensions,
+        cfg.dirs_only,
         progress.as_ref().map(|p| &p.done),
         &excluded,
         cancel_flag,
@@ -116,10 +122,16 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     // Fase 3: aplanar a registros para CSV (operación en memoria, sin I/O)
     let mut records = Vec::new();
     scanner::flatten_to_records(&tree, &mut records);
+    let dirs_count = scanner::count_dirs(&tree);
 
-    // Asegurar que el contador refleje la realidad final
+    // Asegurar que el contador refleje la realidad final (en modo solo
+    // carpetas el progreso cuenta carpetas, no archivos)
     if let Some(p) = &progress {
-        let final_count = records.len();
+        let final_count = if cfg.dirs_only {
+            dirs_count
+        } else {
+            records.len()
+        };
         p.done.store(final_count, Ordering::Relaxed);
         if p.total.load(Ordering::Relaxed) < final_count {
             p.total.store(final_count, Ordering::Relaxed);
@@ -168,6 +180,8 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         md_path,
         json_path,
         files_count: records.len(),
+        dirs_count,
+        dirs_only: cfg.dirs_only,
         skipped_count,
     })
 }
@@ -189,6 +203,7 @@ mod tests {
             input: dir.path().join("no_existe"),
             output: dir.path().join("out"),
             extensions: vec![],
+            dirs_only: false,
         };
         let err = run(&cfg, None).unwrap_err();
         assert!(err.to_string().contains("no existe"));
@@ -203,6 +218,7 @@ mod tests {
             input: file_path,
             output: dir.path().join("out"),
             extensions: vec![],
+            dirs_only: false,
         };
         let err = run(&cfg, None).unwrap_err();
         assert!(err.to_string().contains("no es un directorio"));
@@ -221,6 +237,7 @@ mod tests {
             input,
             output: output.clone(),
             extensions: vec![],
+            dirs_only: false,
         };
         let summary = run(&cfg, None).unwrap();
 
@@ -230,6 +247,34 @@ mod tests {
         assert!(summary.md_path.exists());
         assert!(summary.json_path.exists());
         assert_eq!(summary.csv_path, output.join("report.csv"));
+    }
+
+    #[test]
+    fn run_dirs_only_omits_files_in_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        let output = dir.path().join("out");
+        fs::create_dir(&input).unwrap();
+        fs::create_dir(input.join("subfolder")).unwrap();
+        fs::write(input.join("a.txt"), "hello").unwrap();
+        fs::write(input.join("subfolder").join("b.txt"), "world").unwrap();
+
+        let cfg = RunConfig {
+            input,
+            output,
+            extensions: vec![],
+            dirs_only: true,
+        };
+        let summary = run(&cfg, None).unwrap();
+
+        assert_eq!(summary.files_count, 0);
+        assert_eq!(summary.dirs_count, 1);
+        assert!(summary.dirs_only);
+        assert!(summary.md_path.exists());
+        let md_content = fs::read_to_string(&summary.md_path).unwrap();
+        assert!(md_content.contains("subfolder"));
+        assert!(!md_content.contains("a.txt"));
+        assert!(!md_content.contains("b.txt"));
     }
 
     #[test]
@@ -243,6 +288,7 @@ mod tests {
             input,
             output: dir.path().join("out"),
             extensions: vec![],
+            dirs_only: false,
         };
         let progress = Progress::new();
         run(&cfg, Some(progress.clone())).unwrap();
@@ -269,6 +315,7 @@ mod tests {
             input,
             output,
             extensions: vec![],
+            dirs_only: false,
         };
         let progress = Progress::new();
         let result = run(&cfg, Some(progress.clone()));
@@ -280,5 +327,3 @@ mod tests {
         assert!(!progress.writing.load(Ordering::Relaxed));
     }
 }
-
-

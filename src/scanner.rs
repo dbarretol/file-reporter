@@ -76,18 +76,22 @@ fn path_is_excluded(p: &Path, excluded: &[PathBuf]) -> bool {
 pub fn build_tree(
     path: &Path,
     filters: &[String],
+    dirs_only: bool,
     counter: Option<&AtomicUsize>,
     excluded: &[PathBuf],
     cancel: Option<&AtomicBool>,
     skipped: Option<&AtomicUsize>,
 ) -> Result<Node> {
-    build_tree_inner(path, filters, counter, excluded, cancel, skipped, true)
+    build_tree_inner(
+        path, filters, dirs_only, counter, excluded, cancel, skipped, true,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
 fn build_tree_inner(
     path: &Path,
     filters: &[String],
+    dirs_only: bool,
     counter: Option<&AtomicUsize>,
     excluded: &[PathBuf],
     cancel: Option<&AtomicBool>,
@@ -137,6 +141,15 @@ fn build_tree_inner(
         .unwrap_or_else(|| path.display().to_string());
 
     if metadata.is_dir() {
+        // En modo solo carpetas el progreso cuenta carpetas (la raíz no, igual
+        // que en `count_dirs`), para que el contador en vivo coincida con el
+        // total final del resumen.
+        if dirs_only && !is_root {
+            if let Some(c) = counter {
+                c.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
         // Recolectamos rutas hijas, omitiendo las excluidas (reportes propios)
         let entries: Vec<PathBuf> = match fs::read_dir(path) {
             Ok(rd) => rd
@@ -165,15 +178,26 @@ fn build_tree_inner(
         let mut children: Vec<Node> = entries
             .par_iter()
             .filter_map(|p| {
-                build_tree_inner(p, filters, counter, excluded, cancel, skipped, false).ok()
+                build_tree_inner(
+                    p, filters, dirs_only, counter, excluded, cancel, skipped, false,
+                )
+                .ok()
             })
             .filter(|n| match n {
-                // Conservamos archivos que pasen el filtro
+                // Conservamos archivos que pasen el filtro (y si no se pidió solo directorios)
                 Node::File { extension, .. } => {
-                    filters.is_empty() || filters.iter().any(|f| f.eq_ignore_ascii_case(extension))
+                    !dirs_only
+                        && (filters.is_empty()
+                            || filters.iter().any(|f| f.eq_ignore_ascii_case(extension)))
                 }
-                // Conservamos directorios solo si tienen contenido tras filtrar
-                Node::Directory { children, .. } => !children.is_empty() || filters.is_empty(),
+                // Conservamos directorios
+                Node::Directory { children, .. } => {
+                    if dirs_only {
+                        true
+                    } else {
+                        !children.is_empty() || filters.is_empty()
+                    }
+                }
             })
             .collect();
 
@@ -190,6 +214,21 @@ fn build_tree_inner(
             children,
         })
     } else {
+        if dirs_only {
+            // Los archivos no aparecen en el árbol/reporte final en este modo
+            // (el padre los descarta) ni cuentan para el progreso, que en
+            // este modo cuenta carpetas.
+            return Ok(Node::File {
+                name: name.clone(),
+                path: path.to_path_buf(),
+                size_mb: 0.0,
+                size_bytes: 0,
+                extension: String::new(),
+                created: None,
+                modified: None,
+            });
+        }
+
         let size_bytes = metadata.len();
         let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
         let extension = path
@@ -218,6 +257,18 @@ fn build_tree_inner(
             created: metadata.created().ok().and_then(to_datetime),
             modified: metadata.modified().ok().and_then(to_datetime),
         })
+    }
+}
+
+/// Cuenta las carpetas del árbol, sin incluir la raíz.
+pub fn count_dirs(node: &Node) -> usize {
+    match node {
+        Node::Directory { children, .. } => children
+            .iter()
+            .filter(|c| c.is_dir())
+            .map(|c| 1 + count_dirs(c))
+            .sum(),
+        Node::File { .. } => 0,
     }
 }
 
@@ -294,7 +345,7 @@ mod tests {
         fs::write(dir.path().join("c.TXT"), "hello").unwrap();
 
         let filters = vec!["txt".to_string()];
-        let tree = build_tree(dir.path(), &filters, None, &[], None, None).unwrap();
+        let tree = build_tree(dir.path(), &filters, false, None, &[], None, None).unwrap();
 
         let mut records = Vec::new();
         flatten_to_records(&tree, &mut records);
@@ -314,11 +365,33 @@ mod tests {
         fs::write(dir.path().join("doc.txt"), "x").unwrap();
 
         let filters = vec!["txt".to_string()];
-        let tree = build_tree(dir.path(), &filters, None, &[], None, None).unwrap();
+        let tree = build_tree(dir.path(), &filters, false, None, &[], None, None).unwrap();
 
         // "only_jpgs" queda vacía tras filtrar por txt, así que se descarta
         // del árbol en vez de aparecer como carpeta sin contenido.
         assert_eq!(node_names(&tree), vec!["doc.txt".to_string()]);
+    }
+
+    #[test]
+    fn build_tree_dirs_only_includes_only_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub1 = dir.path().join("folder1");
+        let sub2 = dir.path().join("folder2");
+        fs::create_dir(&sub1).unwrap();
+        fs::create_dir(&sub2).unwrap();
+        fs::write(dir.path().join("file.txt"), "x").unwrap();
+        fs::write(sub1.join("inner.txt"), "x").unwrap();
+
+        let tree = build_tree(dir.path(), &[], true, None, &[], None, None).unwrap();
+
+        assert_eq!(
+            node_names(&tree),
+            vec!["folder1".to_string(), "folder2".to_string()]
+        );
+        let mut records = Vec::new();
+        flatten_to_records(&tree, &mut records);
+        assert!(records.is_empty());
+        assert_eq!(count_dirs(&tree), 2);
     }
 
     #[test]
@@ -329,7 +402,7 @@ mod tests {
         fs::write(dir.path().join("alpha_dir").join("inner.txt"), "x").unwrap();
         fs::write(dir.path().join("beta.txt"), "x").unwrap();
 
-        let tree = build_tree(dir.path(), &[], None, &[], None, None).unwrap();
+        let tree = build_tree(dir.path(), &[], false, None, &[], None, None).unwrap();
         assert_eq!(
             node_names(&tree),
             vec![
@@ -351,10 +424,23 @@ mod tests {
         // capitalización distinta a la de disco (misma carpeta física,
         // p. ej. por haber escrito entrada y salida en cajas de texto
         // separadas con distinto casing). Ver tarea 28.
-        let mixed_case_excluded =
-            PathBuf::from(dir.path().join("report.csv").to_string_lossy().to_uppercase());
+        let mixed_case_excluded = PathBuf::from(
+            dir.path()
+                .join("report.csv")
+                .to_string_lossy()
+                .to_uppercase(),
+        );
 
-        let tree = build_tree(dir.path(), &[], None, &[mixed_case_excluded], None, None).unwrap();
+        let tree = build_tree(
+            dir.path(),
+            &[],
+            false,
+            None,
+            &[mixed_case_excluded],
+            None,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(node_names(&tree), vec!["keep.txt".to_string()]);
     }
@@ -374,7 +460,16 @@ mod tests {
 
         let mixed_case_excluded = dir.path().join("año2026").join("report.csv");
 
-        let tree = build_tree(dir.path(), &[], None, &[mixed_case_excluded], None, None).unwrap();
+        let tree = build_tree(
+            dir.path(),
+            &[],
+            false,
+            None,
+            &[mixed_case_excluded],
+            None,
+            None,
+        )
+        .unwrap();
 
         let mut records = Vec::new();
         flatten_to_records(&tree, &mut records);
@@ -410,7 +505,7 @@ mod tests {
         // contenido real.
         let link_root = dir.path().join("link_root");
         make_junction(&link_root, &real_root);
-        let tree = build_tree(&link_root, &[], None, &[], None, None).unwrap();
+        let tree = build_tree(&link_root, &[], false, None, &[], None, None).unwrap();
         assert_eq!(node_names(&tree), vec!["a.txt".to_string()]);
 
         // Caso 2: una junction dentro del árbol (no en la raíz) se sigue
@@ -423,7 +518,7 @@ mod tests {
         fs::create_dir(&outer).unwrap();
         make_junction(&outer.join("link_sub"), &real_sub);
 
-        let tree2 = build_tree(&outer, &[], None, &[], None, None).unwrap();
+        let tree2 = build_tree(&outer, &[], false, None, &[], None, None).unwrap();
         assert!(node_names(&tree2).is_empty());
     }
 
@@ -434,7 +529,7 @@ mod tests {
         fs::create_dir(dir.path().join("sub")).unwrap();
         fs::write(dir.path().join("sub").join("two.txt"), "abcdefgh").unwrap();
 
-        let tree = build_tree(dir.path(), &[], None, &[], None, None).unwrap();
+        let tree = build_tree(dir.path(), &[], false, None, &[], None, None).unwrap();
         let mut records = Vec::new();
         flatten_to_records(&tree, &mut records);
 

@@ -46,6 +46,9 @@ fn main() -> Result<()> {
     let output = parsed.output.clone().unwrap_or_else(|| input.clone());
     let extensions = parsed.normalized_extensions();
 
+    if parsed.dirs_only {
+        println!("📂 Modo: solo estructura de carpetas");
+    }
     if !extensions.is_empty() {
         println!("🎯 Filtrando extensiones: {:?}", extensions);
     }
@@ -57,6 +60,7 @@ fn main() -> Result<()> {
             input,
             output,
             extensions,
+            dirs_only: parsed.dirs_only,
         },
         None,
     )?;
@@ -65,7 +69,11 @@ fn main() -> Result<()> {
     println!("   📄 CSV:      {}", summary.csv_path.display());
     println!("   📄 Markdown: {}", summary.md_path.display());
     println!("   📄 JSON:     {}", summary.json_path.display());
-    println!("\n📊 Archivos procesados: {}", summary.files_count);
+    if summary.dirs_only {
+        println!("\n📊 Carpetas procesadas: {}", summary.dirs_count);
+    } else {
+        println!("\n📊 Archivos procesados: {}", summary.files_count);
+    }
     if summary.skipped_count > 0 {
         println!(
             "⚠️  {} elementos no accesibles fueron omitidos",

@@ -53,6 +53,7 @@ struct App {
     input_path: String,
     output_path: String,
     extensions: String,
+    dirs_only: bool,
     status: Status,
 
     // Comunicación con el worker
@@ -83,11 +84,16 @@ const UI_ERROR_TTL: std::time::Duration = std::time::Duration::from_secs(5);
 /// Único subconjunto de `App` que se persiste entre sesiones (`eframe`
 /// "persistence"): las rutas y extensiones tecleadas, no el estado de una
 /// corrida en curso.
+/// `#[serde(default)]`: un estado guardado por una versión anterior (sin
+/// algún campo nuevo, p. ej. `dirs_only`) sigue cargándose con el valor por
+/// defecto para ese campo, en vez de fallar y perder todo lo recordado.
 #[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 struct PersistedState {
     input_path: String,
     output_path: String,
     extensions: String,
+    dirs_only: bool,
 }
 
 const PERSIST_KEY: &str = eframe::APP_KEY;
@@ -100,6 +106,7 @@ impl App {
                 app.input_path = state.input_path;
                 app.output_path = state.output_path;
                 app.extensions = state.extensions;
+                app.dirs_only = state.dirs_only;
             }
         }
         app
@@ -160,19 +167,39 @@ const MUTED_LIGHT: egui::Color32 = egui::Color32::from_rgb(75, 85, 99);
 /// de uso ya tiene uno a mano — evita tener que enhebrar el tema como
 /// parámetro extra por todos los métodos `render_*`.
 fn accent_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { ACCENT_DARK } else { ACCENT_LIGHT }
+    if ui.visuals().dark_mode {
+        ACCENT_DARK
+    } else {
+        ACCENT_LIGHT
+    }
 }
 fn success_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { SUCCESS_DARK } else { SUCCESS_LIGHT }
+    if ui.visuals().dark_mode {
+        SUCCESS_DARK
+    } else {
+        SUCCESS_LIGHT
+    }
 }
 fn error_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { ERROR_DARK } else { ERROR_LIGHT }
+    if ui.visuals().dark_mode {
+        ERROR_DARK
+    } else {
+        ERROR_LIGHT
+    }
 }
 fn warning_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { WARNING_DARK } else { WARNING_LIGHT }
+    if ui.visuals().dark_mode {
+        WARNING_DARK
+    } else {
+        WARNING_LIGHT
+    }
 }
 fn muted_color(ui: &egui::Ui) -> egui::Color32 {
-    if ui.visuals().dark_mode { MUTED_DARK } else { MUTED_LIGHT }
+    if ui.visuals().dark_mode {
+        MUTED_DARK
+    } else {
+        MUTED_LIGHT
+    }
 }
 
 impl eframe::App for App {
@@ -319,6 +346,7 @@ impl eframe::App for App {
             input_path: self.input_path.clone(),
             output_path: self.output_path.clone(),
             extensions: self.extensions.clone(),
+            dirs_only: self.dirs_only,
         };
         eframe::set_value(storage, PERSIST_KEY, &state);
     }
@@ -333,6 +361,8 @@ impl App {
         // usuario podría seguir editando rutas/extensiones "por debajo" del
         // diálogo mientras lo tiene abierto.
         let enabled = self.status != Status::Running && self.pending_confirm.is_none();
+        // En modo solo carpetas las extensiones no tienen efecto.
+        let ext_enabled = enabled && !self.dirs_only;
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12.0))
@@ -368,11 +398,12 @@ impl App {
                 ui.label(egui::RichText::new("🎯  Extensiones (separadas por coma)").size(12.0));
                 let ext_width = ui.available_width().max(120.0);
                 ui.add_enabled(
-                    enabled,
+                    ext_enabled,
                     egui::TextEdit::singleline(&mut self.extensions)
                         .hint_text("pdf, docx, jpg  (vacío = todas)")
                         .desired_width(ext_width),
                 )
+                .on_disabled_hover_text("Sin efecto en modo solo carpetas.")
                 .on_hover_text(
                     "Solo la última parte tras el último punto cuenta como extensión: \
                      \"foo.tar.gz\" se filtra con \"gz\", no con \"tar.gz\". \
@@ -383,7 +414,11 @@ impl App {
                 // Sugerencias rápidas
                 ui.add_space(4.0);
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new("Sugerencias:").color(muted_color(ui)).size(11.0));
+                    ui.label(
+                        egui::RichText::new("Sugerencias:")
+                            .color(muted_color(ui))
+                            .size(11.0),
+                    );
                     for preset in [
                         "pdf, docx, xlsx",
                         "jpg, png, gif",
@@ -392,7 +427,7 @@ impl App {
                     ] {
                         if ui
                             .add_enabled(
-                                enabled,
+                                ext_enabled,
                                 egui::Button::new(egui::RichText::new(preset).size(11.0)).small(),
                             )
                             .clicked()
@@ -401,6 +436,12 @@ impl App {
                         }
                     }
                 });
+
+                ui.add_space(8.0);
+                ui.add_enabled(
+                    enabled,
+                    egui::Checkbox::new(&mut self.dirs_only, "📂 Solo carpeta (omitir archivos)"),
+                );
             });
     }
 
@@ -558,7 +599,8 @@ impl App {
                 && self.pending_confirm.is_none()
                 && (!self.input_path.is_empty()
                     || !self.output_path.is_empty()
-                    || !self.extensions.is_empty());
+                    || !self.extensions.is_empty()
+                    || self.dirs_only);
             if ui
                 .add_enabled(
                     can_clear,
@@ -569,6 +611,7 @@ impl App {
                 self.input_path.clear();
                 self.output_path.clear();
                 self.extensions.clear();
+                self.dirs_only = false;
                 self.summary = None;
                 self.error = None;
                 self.progress = None;
@@ -595,6 +638,18 @@ impl App {
         // las ramas animadas de abajo.
         let running = self.status == Status::Running;
         let writing = running && p.writing.load(Ordering::Relaxed);
+        // En modo solo carpetas el contador cuenta carpetas, no archivos. Con
+        // la corrida terminada manda el modo con que se hizo (el checkbox ya
+        // puede haber cambiado desde entonces).
+        let dirs_only = self
+            .summary
+            .as_ref()
+            .map_or(self.dirs_only, |s| s.dirs_only);
+        let (noun, suffix) = if dirs_only {
+            ("carpetas", "as")
+        } else {
+            ("archivos", "os")
+        };
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12.0))
@@ -634,7 +689,7 @@ impl App {
 
                     ui.add_space(4.0);
                     ui.label(
-                        egui::RichText::new(format!("{done} / {total} archivos procesados"))
+                        egui::RichText::new(format!("{done} / {total} {noun} procesad{suffix}"))
                             .color(muted_color(ui))
                             .size(11.0),
                     );
@@ -646,7 +701,7 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.spinner();
                         ui.label(
-                            egui::RichText::new(format!("{done} archivos encontrados…"))
+                            egui::RichText::new(format!("{done} {noun} encontrad{suffix}…"))
                                 .color(muted_color(ui))
                                 .size(12.0),
                         );
@@ -656,7 +711,7 @@ impl App {
                     // total: no hay barra que mostrar, solo el conteo final
                     // congelado, sin animación.
                     ui.label(
-                        egui::RichText::new(format!("{done} archivos procesados"))
+                        egui::RichText::new(format!("{done} {noun} procesad{suffix}"))
                             .color(muted_color(ui))
                             .size(11.0),
                     );
@@ -689,7 +744,10 @@ impl App {
                     .inner_margin(egui::Margin::same(12.0))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.colored_label(success_color(ui), egui::RichText::new("✅").size(16.0));
+                            ui.colored_label(
+                                success_color(ui),
+                                egui::RichText::new("✅").size(16.0),
+                            );
                             ui.label(
                                 egui::RichText::new("Reportes generados correctamente")
                                     .strong()
@@ -698,10 +756,14 @@ impl App {
                             );
                         });
                         ui.add_space(6.0);
-                        ui.label(format!(
-                            "📊 Total de archivos procesados: {}",
-                            s.files_count
-                        ));
+                        if s.dirs_only {
+                            ui.label(format!("📊 Total de carpetas procesadas: {}", s.dirs_count));
+                        } else {
+                            ui.label(format!(
+                                "📊 Total de archivos procesados: {}",
+                                s.files_count
+                            ));
+                        }
                         if s.skipped_count > 0 {
                             ui.colored_label(
                                 warning_color(ui),
@@ -811,17 +873,23 @@ impl App {
         } else {
             PathBuf::from(clean_path_input(&self.output_path))
         };
-        let extensions: Vec<String> = self
-            .extensions
-            .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
-            .map(|s| s.trim().trim_start_matches('.').to_lowercase())
-            .filter(|s| !s.is_empty())
-            .collect();
+        // El texto de extensiones se conserva en el formulario, pero en modo
+        // solo carpetas no se envía (igual que la CLI, que rechaza `-d -e`).
+        let extensions: Vec<String> = if self.dirs_only {
+            Vec::new()
+        } else {
+            self.extensions
+                .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+                .map(|s| s.trim().trim_start_matches('.').to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
 
         RunConfig {
             input,
             output,
             extensions,
+            dirs_only: self.dirs_only,
         }
     }
 
@@ -1142,6 +1210,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("dropped.txt");
         std::fs::write(&file_path, "x").unwrap();
-        assert_eq!(dropped_path_to_input_dir(file_path), dir.path().to_path_buf());
+        assert_eq!(
+            dropped_path_to_input_dir(file_path),
+            dir.path().to_path_buf()
+        );
     }
 }

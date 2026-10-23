@@ -18,6 +18,11 @@ pub struct Cli {
     /// Directorio de salida (por defecto: la misma ruta de entrada).
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    /// Solo escanear la estructura de carpetas (omitir archivos).
+    /// Incompatible con `--ext`, que no tendría efecto.
+    #[arg(short = 'd', long = "dirs-only", conflicts_with = "extensions")]
+    pub dirs_only: bool,
 }
 
 impl Cli {
@@ -39,6 +44,7 @@ mod tests {
             path: PathBuf::from("."),
             extensions: extensions.into_iter().map(String::from).collect(),
             output: None,
+            dirs_only: false,
         }
     }
 
@@ -58,5 +64,11 @@ mod tests {
     fn normalized_extensions_empty_stays_empty() {
         let cli = cli_with(vec![]);
         assert!(cli.normalized_extensions().is_empty());
+    }
+
+    #[test]
+    fn dirs_only_conflicts_with_ext() {
+        assert!(Cli::try_parse_from(["file-reporter", ".", "-d", "-e", "txt"]).is_err());
+        assert!(Cli::try_parse_from(["file-reporter", ".", "-d"]).is_ok());
     }
 }

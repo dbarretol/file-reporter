@@ -1,5 +1,8 @@
 # 📋 File Reporter
 
+[![CI](https://github.com/dbarretol/file-reporter/actions/workflows/ci.yml/badge.svg)](https://github.com/dbarretol/file-reporter/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 > Herramienta multiplataforma escrita en **Rust** que escanea recursivamente un directorio y genera reportes en **CSV, Markdown y JSON** sobre su estructura y contenido.
 
 Diseñada para ser **rápida**, **robusta** y **fácil de usar**, ofrece tanto una interfaz gráfica (GUI) amigable como una potente interfaz de línea de comandos (CLI) para integrarse en flujos de trabajo automatizados.
@@ -15,6 +18,7 @@ Diseñada para ser **rápida**, **robusta** y **fácil de usar**, ofrece tanto u
   - **Markdown** con árbol jerárquico estilo `tree`.
   - **JSON** estructurado para integraciones.
 - 🎯 **Filtro por extensiones** — analiza solo los tipos de archivo que te interesan.
+- 📂 **Modo solo carpetas** — omite los archivos y genera reportes con únicamente la jerarquía de directorios.
 - 📅 **Metadatos completos** — nombre, extensión, tamaño en MB y en bytes exactos, fechas de creación y modificación (formato local + ISO-8601), ruta.
 - 🛡️ **Manejo robusto de errores** — sigue funcionando aunque haya carpetas sin permisos (y avisa cuántos elementos quedaron fuera del reporte), y detecta symlinks/junctions cíclicos sin colgarse.
 - 📈 **Barra de progreso granular con ETA**, que distingue la fase de escaneo de la de escritura de reportes.
@@ -53,7 +57,7 @@ Diseñada para ser **rápida**, **robusta** y **fácil de usar**, ofrece tanto u
 Clona el repositorio y compila en modo **release** para máximo rendimiento:
 
 ```bash
-git clone https://github.com/tu-usuario/file-reporter.git
+git clone https://github.com/dbarretol/file-reporter.git
 cd file-reporter
 cargo build --release
 ```
@@ -77,7 +81,8 @@ Aparecerá una ventana donde podrás:
 1. Seleccionar la carpeta a escanear (escribiendo la ruta, usando "Examinar…", o arrastrándola directamente a la ventana).
 2. Definir una carpeta de salida personalizada (opcional).
 3. Especificar extensiones a filtrar, con presets rápidos.
-4. Pulsar **▶ Generar reportes** (o Enter desde cualquier campo) y monitorizar el progreso en tiempo real, con opción de **⏹ Cancelar** en cualquier momento.
+4. Marcar **📂 Solo carpeta (omitir archivos)** si solo quieres la jerarquía de directorios, sin analizar archivos (el filtro de extensiones se desactiva en este modo).
+5. Pulsar **▶ Generar reportes** (o Enter desde cualquier campo) y monitorizar el progreso en tiempo real, con opción de **⏹ Cancelar** en cualquier momento.
 
 Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide confirmación antes de sobrescribirlos. Las rutas y extensiones usadas se recuerdan automáticamente para la próxima sesión.
 
@@ -94,6 +99,9 @@ Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide co
 # Especificar carpeta de salida personalizada
 ./target/release/file-reporter /ruta -e mp4 -o /ruta/reportes
 
+# Escanear solo la estructura de carpetas (omitir archivos)
+./target/release/file-reporter /ruta -d
+
 # En Windows con PowerShell
 .\target\release\file-reporter.exe "D:\MisDocumentos" -e pdf,docx -o "D:\reportes"
 ```
@@ -105,6 +113,7 @@ Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide co
 | `<PATH>` | Ruta de la carpeta a escanear | ✅ Sí |
 | `-e`, `--ext` | Extensiones a filtrar (separadas por coma o repetidas) | ❌ No |
 | `-o`, `--output` | Directorio donde guardar los reportes (por defecto: misma ruta de entrada) | ❌ No |
+| `-d`, `--dirs-only` | Solo escanear la estructura de carpetas (omitir archivos). Incompatible con `-e` | ❌ No |
 | `-h`, `--help` | Muestra la ayuda | — |
 | `-V`, `--version` | Muestra la versión | — |
 
@@ -119,6 +128,10 @@ Si la carpeta de salida ya contiene reportes de una corrida anterior, se pide co
 ## 📁 Archivos generados
 
 Al finalizar, se generan **tres archivos** en la carpeta de salida:
+
+> 📂 **Modo solo carpetas** (`-d`/`--dirs-only` en CLI, checkbox en GUI): los archivos se
+> omiten por completo. `report.csv` queda solo con la cabecera (sin filas), y `report.md`/
+> `report.json` muestran únicamente la jerarquía de directorios, sin nodos de archivo.
 
 ### `report.csv`
 
@@ -286,7 +299,7 @@ Este proyecto se distribuye bajo la licencia **MIT**. Consulta el archivo [`LICE
 
 ## 👤 Autor
 
-Desarrollado como proyecto de aprendizaje en Rust.  
+Desarrollado por [@dbarretol](https://github.com/dbarretol) como proyecto de aprendizaje en Rust.  
 *Si te resulta útil, considera dejar una ⭐ en el repositorio.*
 
 ---
