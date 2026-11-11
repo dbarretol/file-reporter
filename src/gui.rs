@@ -32,20 +32,18 @@ pub fn launch() -> Result<()> {
 
 /// Ajustes visuales globales (espaciado, tipografía, etc.).
 fn setup_custom_style(ctx: &egui::Context) {
-    let mut style = (*ctx.style()).clone();
+    ctx.all_styles_mut(|style| {
+        // Espaciado más generoso
+        style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+        style.spacing.button_padding = egui::vec2(12.0, 6.0);
+        style.spacing.interact_size.y = 28.0;
 
-    // Espaciado más generoso
-    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-    style.spacing.button_padding = egui::vec2(12.0, 6.0);
-    style.spacing.interact_size.y = 28.0;
-
-    // Bordes ligeramente más redondeados
-    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(4.0);
-    style.visuals.widgets.inactive.rounding = egui::Rounding::same(4.0);
-    style.visuals.widgets.hovered.rounding = egui::Rounding::same(4.0);
-    style.visuals.widgets.active.rounding = egui::Rounding::same(4.0);
-
-    ctx.set_style(style);
+        // Bordes ligeramente más redondeados
+        style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(4);
+        style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(4);
+        style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(4);
+        style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(4);
+    });
 }
 
 #[derive(Default)]
@@ -296,7 +294,8 @@ fn muted_color(ui: &egui::Ui) -> egui::Color32 {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = &ui.ctx().clone();
         if self.status == Status::Running {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
@@ -361,9 +360,9 @@ impl eframe::App for App {
         self.render_overwrite_confirm(ctx);
 
         // Top bar con título
-        egui::TopBottomPanel::top("header")
-            .exact_height(56.0)
-            .show(ctx, |ui| {
+        egui::Panel::top("header")
+            .exact_size(56.0)
+            .show(ui, |ui| {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.add_space(16.0);
@@ -385,9 +384,9 @@ impl eframe::App for App {
             });
 
         // Status bar abajo
-        egui::TopBottomPanel::bottom("statusbar")
-            .exact_height(24.0)
-            .show(ctx, |ui| {
+        egui::Panel::bottom("statusbar")
+            .exact_size(24.0)
+            .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(12.0);
                     // Un error de una acción puntual (p. ej. "Abrir carpeta"
@@ -409,7 +408,7 @@ impl eframe::App for App {
             });
 
         // Panel principal
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default_margins().show(ui, |ui| {
             // Sin auto_shrink el ancho del área es siempre el del panel, no el
             // del contenido del frame anterior.
             egui::ScrollArea::vertical()
@@ -432,14 +431,14 @@ impl eframe::App for App {
 
                     let side_margin = ((available - content_width) / 2.0).max(SIDE_PADDING);
 
-                    egui::Frame::none()
-                        .inner_margin(egui::Margin {
-                            left: side_margin,
-                            right: side_margin,
-                            top: 0.0,
-                            bottom: 0.0,
-                        })
-                        .show(ui, |ui| {
+                    // Margen lateral con `add_space` y no con `Frame::inner_margin`:
+                    // `Margin` usa `i8` y no admite márgenes de más de 127 px.
+                    let item_spacing = ui.spacing().item_spacing;
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        ui.add_space(side_margin);
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing = item_spacing;
                             // Forzamos a TODOS los hijos a respetar el ancho máximo.
                             ui.set_max_width(content_width);
 
@@ -453,6 +452,7 @@ impl eframe::App for App {
                             self.render_results(ui);
                             ui.add_space(12.0);
                         });
+                    });
                 });
         });
     }
@@ -484,7 +484,7 @@ impl App {
         let ext_enabled = enabled && !self.dirs_only;
 
         egui::Frame::group(ui.style())
-            .inner_margin(egui::Margin::same(12.0))
+            .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.label(egui::RichText::new("Configuración").strong().size(14.0));
                 ui.add_space(6.0);
@@ -665,7 +665,7 @@ impl App {
             return;
         }
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
-        if let Some(path) = dropped.iter().find_map(|f| f.path.clone()) {
+        if let Some(path) = dropped.iter().map(|f| f.path().to_path_buf()).next() {
             self.input_path = dropped_path_to_input_dir(path).display().to_string();
         }
     }
@@ -677,10 +677,10 @@ impl App {
         if !hovering || self.status == Status::Running || self.pending_confirm.is_some() {
             return;
         }
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
-            egui::Id::new("drop_overlay"),
+            egui::Id::unique("drop_overlay"),
         ));
         painter.rect_filled(
             screen,
@@ -843,7 +843,7 @@ impl App {
         };
 
         egui::Frame::group(ui.style())
-            .inner_margin(egui::Margin::same(12.0))
+            .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.spinner();
@@ -898,7 +898,7 @@ impl App {
                 let Some(s) = &self.summary else { return };
                 let copied = self.copied.as_ref().map(|(p, _)| p.clone());
                 egui::Frame::group(ui.style())
-                    .inner_margin(egui::Margin::same(12.0))
+                    .inner_margin(egui::Margin::same(12))
                     .show(ui, |ui| {
                         panel_title(
                             ui,
@@ -957,7 +957,7 @@ impl App {
             Status::Failed => {
                 let Some(e) = &self.error else { return };
                 egui::Frame::group(ui.style())
-                    .inner_margin(egui::Margin::same(12.0))
+                    .inner_margin(egui::Margin::same(12))
                     .fill(egui::Color32::from_rgba_unmultiplied(220, 70, 70, 20))
                     .show(ui, |ui| {
                         panel_title(ui, error_color(ui), "❌", "Ha ocurrido un error");
@@ -979,7 +979,7 @@ impl App {
                     "archivos encontrados"
                 };
                 egui::Frame::group(ui.style())
-                    .inner_margin(egui::Margin::same(12.0))
+                    .inner_margin(egui::Margin::same(12))
                     .show(ui, |ui| {
                         panel_title(ui, warning_color(ui), "⏹", "Escaneo cancelado");
                         ui.add_space(4.0);
