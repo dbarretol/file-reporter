@@ -214,16 +214,23 @@ fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], to
         .show(ui, |ui| {
             egui::Grid::new("type_stats")
                 .num_columns(4)
-                .spacing([14.0, 4.0])
+                .spacing([14.0, 2.0])
+                // Sin esto las filas toman `interact_size.y` (28 px, pensado
+                // para botones) y la tabla queda demasiado espaciada.
+                .min_row_height(18.0)
                 .show(ui, |ui| {
                     for row in runner::top_types(stats, TOP_TYPES) {
+                        // Números en monoespaciada con relleno para que queden
+                        // alineados a la derecha (un `Layout::right_to_left`
+                        // dentro del Grid estira la fila en alto).
                         ui.label(egui::RichText::new(&row.label).monospace());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(format!("{} arch.", row.count));
-                        });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(runner::format_size(row.bytes));
-                        });
+                        ui.label(
+                            egui::RichText::new(format!("{:>7} arch.", row.count)).monospace(),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!("{:>9}", runner::format_size(row.bytes)))
+                                .monospace(),
+                        );
                         ui.horizontal(|ui| {
                             let fraction = if total == 0 {
                                 0.0
