@@ -126,7 +126,7 @@ El mismo ejecutable funciona en dos modos:
 1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…" o arrástrala a la ventana.
 2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
 3. *(Opcional)* Escribe las **extensiones** a incluir. Las sugerencias se suman a lo escrito; pulsarlas otra vez las quita.
-4. *(Opcional)* Escribe las **carpetas a omitir** por nombre. La sugerencia "Carpetas de proyectos" añade `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`.
+4. *(Opcional)* Revisa las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas, o pulsa la sugerencia "Carpetas de proyectos" para quitarlas o volver a ponerlas.
 5. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
 6. *(Opcional)* Desmarca los **formatos** que no necesites (CSV, Markdown, JSON).
 7. Pulsa **▶ Generar reportes** (o Enter).
