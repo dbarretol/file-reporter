@@ -64,8 +64,9 @@ struct App {
     summary: Option<RunSummary>,
     error: Option<String>,
 
-    // Corrida a la espera de confirmación de sobrescritura (ver `request_run`).
-    pending_confirm: Option<RunConfig>,
+    // Corrida a la espera de confirmación de sobrescritura, con los reportes
+    // que pisaría (ver `request_run`).
+    pending_confirm: Option<(RunConfig, Vec<PathBuf>)>,
 
     /// Error de una acción puntual de UI (p. ej. "Abrir carpeta" falló al
     /// lanzar el explorador). Se muestra en la barra de estado sin tocar
@@ -75,6 +76,66 @@ struct App {
     /// `UI_ERROR_TTL`) en vez de dejarlo pegado en la barra de estado para
     /// siempre.
     ui_error_at: Option<Instant>,
+
+    /// Validación en vivo de las rutas tecleadas (ver `PathCheck`).
+    input_check: PathCheck,
+    output_check: PathCheck,
+
+    /// Al llegar el resultado de una corrida, desplazar la vista hasta el
+    /// panel de resultados una sola vez (puede quedar fuera de la ventana).
+    scroll_to_results: bool,
+
+    /// Última ruta copiada con "Copiar ruta" y cuándo, para confirmar la
+    /// copia en el botón durante `COPIED_TTL`.
+    copied: Option<(PathBuf, Instant)>,
+}
+
+/// Tiempo que el botón "Copiar ruta" muestra "✔ Copiada".
+const COPIED_TTL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Qué hay en disco en la ruta que escribió el usuario.
+#[derive(Default, Clone, Copy, PartialEq)]
+enum PathStatus {
+    #[default]
+    Empty,
+    Missing,
+    NotDir,
+    Dir,
+}
+
+/// Estado de una ruta del formulario, recalculado solo cuando cambia el
+/// texto: consultar el disco en cada frame sería costoso con unidades de
+/// red lentas.
+#[derive(Default)]
+struct PathCheck {
+    text: Option<String>,
+    status: PathStatus,
+}
+
+impl PathCheck {
+    fn refresh(&mut self, raw: &str) -> PathStatus {
+        let cleaned = clean_path_input(raw);
+        if self.text.as_deref() != Some(cleaned) {
+            let path = std::path::Path::new(cleaned);
+            self.status = if cleaned.is_empty() {
+                PathStatus::Empty
+            } else if path.is_dir() {
+                PathStatus::Dir
+            } else if path.exists() {
+                PathStatus::NotDir
+            } else {
+                PathStatus::Missing
+            };
+            self.text = Some(cleaned.to_string());
+        }
+        self.status
+    }
+
+    /// Fuerza a volver a consultar el disco la próxima vez (p. ej. al
+    /// lanzar una corrida, por si la carpeta cambió sin tocar el texto).
+    fn invalidate(&mut self) {
+        self.text = None;
+    }
 }
 
 /// Tiempo que un `ui_error` puntual permanece visible en la barra de estado
@@ -208,6 +269,18 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
 
+        self.input_check.refresh(&self.input_path);
+        self.output_check.refresh(&self.output_path);
+
+        if let Some((_, at)) = &self.copied {
+            let elapsed = at.elapsed();
+            if elapsed >= COPIED_TTL {
+                self.copied = None;
+            } else {
+                ctx.request_repaint_after(COPIED_TTL - elapsed);
+            }
+        }
+
         // Auto-expira el `ui_error` puntual en vez de dejarlo pegado en la
         // barra de estado para siempre.
         if let Some(at) = self.ui_error_at {
@@ -222,28 +295,37 @@ impl eframe::App for App {
         // Drenar mensajes del worker
         if let Some(rx) = &self.rx {
             while let Ok(msg) = rx.try_recv() {
-                match msg {
+                // Si el usuario se fue a otra ventana durante un escaneo
+                // largo, la de la app parpadea en la barra de tareas al
+                // terminar. Cancelar fue una acción suya: no hace falta avisar.
+                let attention = match msg {
                     WorkerMsg::Done(s) => {
                         self.summary = Some(s);
                         self.status = Status::Done;
-                        self.finished_at = Some(Instant::now());
+                        Some(egui::UserAttentionType::Informational)
                     }
                     WorkerMsg::Failed(e) => {
                         self.error = Some(e);
                         self.status = Status::Failed;
-                        self.finished_at = Some(Instant::now());
+                        Some(egui::UserAttentionType::Critical)
                     }
                     WorkerMsg::Cancelled => {
                         self.status = Status::Cancelled;
-                        self.finished_at = Some(Instant::now());
+                        None
                     }
+                };
+                self.finished_at = Some(Instant::now());
+                self.scroll_to_results = true;
+                let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
+                if let (Some(kind), false) = (attention, focused) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(kind));
                 }
             }
         }
 
         self.handle_dropped_files(ctx);
         self.render_drop_hint(ctx);
-        self.handle_enter_to_run(ctx);
+        self.handle_shortcuts(ctx);
         self.render_overwrite_confirm(ctx);
 
         // Top bar con título
@@ -379,6 +461,13 @@ impl App {
                     "Selecciona la carpeta…",
                     || rfd::FileDialog::new().pick_folder(),
                 );
+                match self.input_check.status {
+                    PathStatus::Empty | PathStatus::Dir => {}
+                    PathStatus::Missing => field_note(ui, error_color(ui), "✖ La ruta no existe"),
+                    PathStatus::NotDir => {
+                        field_note(ui, error_color(ui), "✖ Es un archivo, no una carpeta")
+                    }
+                }
 
                 ui.add_space(8.0);
 
@@ -391,6 +480,27 @@ impl App {
                     "Por defecto: misma que la entrada",
                     || rfd::FileDialog::new().pick_folder(),
                 );
+                // Dónde acabarán los reportes, para que el valor por defecto
+                // (la carpeta escaneada) no sea una sorpresa.
+                match (self.output_check.status, self.input_check.status) {
+                    (PathStatus::NotDir, _) => {
+                        field_note(ui, error_color(ui), "✖ Es un archivo, no una carpeta")
+                    }
+                    (PathStatus::Missing, _) => field_note(
+                        ui,
+                        muted_color(ui),
+                        "La carpeta no existe: se creará al generar los reportes",
+                    ),
+                    (PathStatus::Empty, PathStatus::Dir) => field_note(
+                        ui,
+                        muted_color(ui),
+                        &format!(
+                            "Los reportes se guardarán en la carpeta escaneada: {}",
+                            clean_path_input(&self.input_path)
+                        ),
+                    ),
+                    _ => {}
+                }
 
                 ui.add_space(8.0);
 
@@ -440,32 +550,61 @@ impl App {
                 ui.add_space(8.0);
                 ui.add_enabled(
                     enabled,
-                    egui::Checkbox::new(&mut self.dirs_only, "📂 Solo carpeta (omitir archivos)"),
+                    egui::Checkbox::new(&mut self.dirs_only, "📂 Solo carpetas (omitir archivos)"),
                 );
             });
+    }
+
+    /// Por qué no se puede lanzar un escaneo ahora mismo, o `None` si se
+    /// puede. Compartido entre el botón "Generar reportes" (que lo muestra
+    /// como tooltip al estar deshabilitado) y Enter.
+    fn run_blocker(&self) -> Option<&'static str> {
+        if self.status == Status::Running || self.pending_confirm.is_some() {
+            return Some("Hay un escaneo en curso.");
+        }
+        match self.input_check.status {
+            PathStatus::Empty => return Some("Elige primero la carpeta a escanear."),
+            PathStatus::Missing | PathStatus::NotDir => {
+                return Some("La carpeta a escanear no es válida.")
+            }
+            PathStatus::Dir => {}
+        }
+        if self.output_check.status == PathStatus::NotDir {
+            return Some("La carpeta de salida no es válida.");
+        }
+        None
+    }
+
+    fn can_run(&self) -> bool {
+        self.run_blocker().is_none()
+    }
+
+    /// Atajos de teclado: Enter lanza "Generar reportes" (igual que el
+    /// botón, si el formulario es válido) y Esc cancela un escaneo en curso.
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        let (enter, esc) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::Enter),
+                i.key_pressed(egui::Key::Escape),
+            )
+        });
+        if enter && self.can_run() {
+            self.request_run();
+        }
+        if esc && self.status == Status::Running {
+            self.request_cancel();
+        }
+    }
+
+    fn request_cancel(&self) {
+        if let Some(p) = &self.progress {
+            p.cancel.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Arrastrar una carpeta a la ventana rellena "Carpeta a escanear"
     /// (el gesto más natural para esta app). Se ignora mientras hay un
     /// escaneo en curso, igual que el resto del formulario.
-    /// Si el formulario tiene lo mínimo para lanzar un escaneo (no hay uno en
-    /// curso, no hay un diálogo de confirmación pendiente, y hay una ruta de
-    /// entrada). Compartido entre el botón "Generar reportes" y Enter.
-    fn can_run(&self) -> bool {
-        self.status != Status::Running
-            && self.pending_confirm.is_none()
-            && !clean_path_input(&self.input_path).is_empty()
-    }
-
-    /// Enter en cualquier campo del formulario dispara "Generar reportes",
-    /// igual que pulsar el botón, siempre que el formulario sea válido.
-    fn handle_enter_to_run(&mut self, ctx: &egui::Context) {
-        let enter_pressed = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-        if enter_pressed && self.can_run() {
-            self.request_run();
-        }
-    }
-
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
         if self.status == Status::Running || self.pending_confirm.is_some() {
             return;
@@ -504,10 +643,9 @@ impl App {
 
     /// ─── Diálogo: confirmar sobrescritura de reportes existentes ──
     fn render_overwrite_confirm(&mut self, ctx: &egui::Context) {
-        let Some(cfg) = &self.pending_confirm else {
+        let Some((_, files)) = &self.pending_confirm else {
             return;
         };
-        let files = existing_reports(cfg);
 
         let mut confirmed = false;
         // Esc cierra el diálogo como si se pulsara "Cancelar" — sin esto, el
@@ -521,7 +659,7 @@ impl App {
             .show(ctx, |ui| {
                 ui.label("Ya existen reportes de una corrida anterior en la carpeta de salida:");
                 ui.add_space(6.0);
-                for f in &files {
+                for f in files {
                     ui.label(
                         egui::RichText::new(format!("• {}", f.display()))
                             .monospace()
@@ -550,7 +688,7 @@ impl App {
             });
 
         if confirmed {
-            if let Some(cfg) = self.pending_confirm.take() {
+            if let Some((cfg, _)) = self.pending_confirm.take() {
                 self.start_run(cfg);
             }
         } else if cancelled {
@@ -572,7 +710,12 @@ impl App {
             .fill(accent_color(ui))
             .min_size(egui::vec2(180.0, 36.0));
 
-            if ui.add_enabled(can_run, run_btn).clicked() {
+            let run_resp = ui.add_enabled(can_run, run_btn);
+            let run_resp = match self.run_blocker() {
+                Some(reason) => run_resp.on_disabled_hover_text(reason),
+                None => run_resp.on_hover_text("Atajo: Enter"),
+            };
+            if run_resp.clicked() {
                 self.request_run();
             }
 
@@ -587,10 +730,8 @@ impl App {
                 .fill(error_color(ui))
                 .min_size(egui::vec2(120.0, 36.0));
 
-                if ui.add(cancel_btn).clicked() {
-                    if let Some(p) = &self.progress {
-                        p.cancel.store(true, Ordering::Relaxed);
-                    }
+                if ui.add(cancel_btn).on_hover_text("Atajo: Esc").clicked() {
+                    self.request_cancel();
                 }
             }
 
@@ -618,104 +759,60 @@ impl App {
                 self.pending_confirm = None;
                 self.started_at = None;
                 self.finished_at = None;
+                self.scroll_to_results = false;
+                self.copied = None;
                 self.clear_ui_error();
                 self.status = Status::Idle;
             }
         });
     }
 
-    /// ─── Sección: Barra de progreso + ETA ────────────────────────
+    /// ─── Sección: Progreso (solo mientras hay un escaneo en curso) ──
+    /// Al terminar, el panel desaparece: el resultado (con el tiempo total)
+    /// se muestra una sola vez, en `render_results`.
     fn render_progress(&self, ui: &mut egui::Ui) {
+        if self.status != Status::Running {
+            return;
+        }
         let Some(p) = &self.progress else { return };
-
-        let frac = p.fraction();
         let done = p.done.load(Ordering::Relaxed);
-        let total = p.total.load(Ordering::Relaxed);
-        // Una vez que el worker terminó (Done/Failed/cancelado), el `Progress`
-        // compartido queda congelado tal cual en su último instante y ya no
-        // hay nada que animar: seguir dibujando `ui.spinner()` fuerza repaint
-        // continuo (~60 fps) aunque la app esté ociosa. `running` gatea todas
-        // las ramas animadas de abajo.
-        let running = self.status == Status::Running;
-        let writing = running && p.writing.load(Ordering::Relaxed);
-        // En modo solo carpetas el contador cuenta carpetas, no archivos. Con
-        // la corrida terminada manda el modo con que se hizo (el checkbox ya
-        // puede haber cambiado desde entonces).
-        let dirs_only = self
-            .summary
-            .as_ref()
-            .map_or(self.dirs_only, |s| s.dirs_only);
-        let (noun, suffix) = if dirs_only {
-            ("carpetas", "as")
+        let writing = p.writing.load(Ordering::Relaxed);
+        // Mientras hay un escaneo en curso el checkbox está deshabilitado,
+        // así que `self.dirs_only` es el modo de esta corrida.
+        let noun = if self.dirs_only {
+            "carpetas encontradas"
         } else {
-            ("archivos", "os")
+            "archivos encontrados"
         };
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12.0))
             .show(ui, |ui| {
-                // Header: "Progreso" + ETA
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Progreso").strong().size(13.0));
+                    ui.spinner();
+                    // No hay total ni ETA: contar antes de escanear obligaría a
+                    // recorrer el disco dos veces. Se muestra un contador en
+                    // vivo y el tiempo transcurrido.
+                    let text = if writing {
+                        format!("Generando reportes… ({done} {noun})")
+                    } else {
+                        format!("Escaneando… {done} {noun}")
+                    };
+                    ui.label(egui::RichText::new(text).size(13.0));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
-                            egui::RichText::new(self.compute_eta(frac))
+                            egui::RichText::new(format!("⏱  {}", fmt_seconds(self.elapsed_secs())))
                                 .color(muted_color(ui))
                                 .size(12.0),
                         );
                     });
                 });
-                ui.add_space(6.0);
-
-                if writing {
-                    // El escaneo ya terminó (done/total quedaron fijos en el
-                    // conteo final); ahora se escriben los 3 reportes, lo
-                    // cual puede tardar un momento con árboles muy grandes.
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(
-                            egui::RichText::new("Generando reportes…")
-                                .color(muted_color(ui))
-                                .size(12.0),
-                        );
-                    });
-                } else if total > 0 {
-                    // ProgressBar SIN desired_width: egui ajusta automáticamente
-                    // y evitamos cualquier problema de cálculo de ancho.
-                    let bar = egui::ProgressBar::new(frac.clamp(0.0, 1.0))
-                        .show_percentage()
-                        .animate(running);
-                    ui.add(bar);
-
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new(format!("{done} / {total} {noun} procesad{suffix}"))
-                            .color(muted_color(ui))
-                            .size(11.0),
-                    );
-                } else if running {
-                    // No hacemos una pasada previa solo para contar archivos
-                    // (duplicaría el I/O y casi duplicaría el tiempo total),
-                    // así que mientras se escanea no conocemos el total:
-                    // mostramos progreso indeterminado con un contador en vivo.
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(
-                            egui::RichText::new(format!("{done} {noun} encontrad{suffix}…"))
-                                .color(muted_color(ui))
-                                .size(12.0),
-                        );
-                    });
-                } else {
-                    // Terminó (o se canceló) antes de llegar a conocer un
-                    // total: no hay barra que mostrar, solo el conteo final
-                    // congelado, sin animación.
-                    ui.label(
-                        egui::RichText::new(format!("{done} {noun} procesad{suffix}"))
-                            .color(muted_color(ui))
-                            .size(11.0),
-                    );
-                }
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new("Pulsa Esc para cancelar.")
+                        .color(muted_color(ui))
+                        .size(11.0),
+                );
             });
     }
 
@@ -733,37 +830,36 @@ impl App {
         }
     }
 
-    /// ─── Sección: Resultados o error ─────────────────────────────
+    /// ─── Sección: Resultado de la corrida ────────────────────────
     fn render_results(&mut self, ui: &mut egui::Ui) {
-        match self.status {
+        let elapsed = fmt_seconds(self.elapsed_secs());
+        let mut action: Option<(RowAction, PathBuf)> = None;
+        let mut open_folder: Option<PathBuf> = None;
+
+        let panel = match self.status {
             Status::Done => {
                 let Some(s) = &self.summary else { return };
-                let mut open_result: Option<Result<(), String>> = None;
-
+                let copied = self.copied.as_ref().map(|(p, _)| p.clone());
                 egui::Frame::group(ui.style())
                     .inner_margin(egui::Margin::same(12.0))
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.colored_label(
-                                success_color(ui),
-                                egui::RichText::new("✅").size(16.0),
-                            );
-                            ui.label(
-                                egui::RichText::new("Reportes generados correctamente")
-                                    .strong()
-                                    .size(14.0)
-                                    .color(success_color(ui)),
-                            );
-                        });
+                        panel_title(
+                            ui,
+                            success_color(ui),
+                            "✅",
+                            "Reportes generados correctamente",
+                        );
                         ui.add_space(6.0);
-                        if s.dirs_only {
-                            ui.label(format!("📊 Total de carpetas procesadas: {}", s.dirs_count));
+                        let counts = if s.dirs_only {
+                            format!("📊 {} carpetas · ⏱ {elapsed}", s.dirs_count)
                         } else {
-                            ui.label(format!(
-                                "📊 Total de archivos procesados: {}",
-                                s.files_count
-                            ));
-                        }
+                            format!(
+                                "📊 {} archivos · {} · ⏱ {elapsed}",
+                                s.files_count,
+                                runner::format_size(s.total_bytes)
+                            )
+                        };
+                        ui.label(counts);
                         if s.skipped_count > 0 {
                             ui.colored_label(
                                 warning_color(ui),
@@ -775,47 +871,26 @@ impl App {
                         }
                         ui.add_space(8.0);
 
-                        // Tabla de archivos generados
-                        result_row(ui, "CSV", &s.csv_path);
-                        result_row(ui, "Markdown", &s.md_path);
-                        result_row(ui, "JSON", &s.json_path);
+                        for (label, path) in [
+                            ("CSV", &s.csv_path),
+                            ("Markdown", &s.md_path),
+                            ("JSON", &s.json_path),
+                        ] {
+                            let is_copied = copied.as_ref() == Some(path);
+                            if let Some(a) = result_row(ui, label, path, is_copied) {
+                                action = Some((a, path.clone()));
+                            }
+                        }
 
                         ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button(
-                                    egui::RichText::new("📂  Abrir carpeta de salida").size(12.0),
-                                )
-                                .clicked()
-                            {
-                                // /select, abre el Explorador en la carpeta
-                                // contenedora con el CSV ya resaltado.
-                                open_result = Some(
-                                    open_selecting(&s.csv_path)
-                                        .map_err(|e| format!("No se pudo abrir la carpeta: {e}")),
-                                );
-                            }
-                            if ui
-                                .button(egui::RichText::new("📄  Abrir CSV").size(12.0))
-                                .clicked()
-                            {
-                                open_result = Some(
-                                    open_in_explorer(&s.csv_path)
-                                        .map_err(|e| format!("No se pudo abrir el CSV: {e}")),
-                                );
-                            }
-                        });
-                    });
-
-                if let Some(result) = open_result {
-                    // Una acción puntual exitosa limpia cualquier ui_error
-                    // pendiente de una acción anterior, no solo lo reemplaza
-                    // si falla de nuevo.
-                    match result.err() {
-                        Some(e) => self.set_ui_error(e),
-                        None => self.clear_ui_error(),
-                    }
-                }
+                        if ui
+                            .button(egui::RichText::new("📂  Abrir carpeta de salida").size(12.0))
+                            .clicked()
+                        {
+                            open_folder = Some(s.csv_path.clone());
+                        }
+                    })
+                    .response
             }
             Status::Failed => {
                 let Some(e) = &self.error else { return };
@@ -823,43 +898,73 @@ impl App {
                     .inner_margin(egui::Margin::same(12.0))
                     .fill(egui::Color32::from_rgba_unmultiplied(220, 70, 70, 20))
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.colored_label(error_color(ui), egui::RichText::new("❌").size(16.0));
-                            ui.label(
-                                egui::RichText::new("Ha ocurrido un error")
-                                    .strong()
-                                    .color(error_color(ui)),
-                            );
-                        });
+                        panel_title(ui, error_color(ui), "❌", "Ha ocurrido un error");
                         ui.add_space(4.0);
                         ui.label(egui::RichText::new(e).monospace().size(12.0));
-                    });
+                    })
+                    .response
             }
             Status::Cancelled => {
                 // Neutral, no rojo: cancelar no es un error del programa,
                 // es una acción deliberada del usuario.
+                let done = self
+                    .progress
+                    .as_ref()
+                    .map_or(0, |p| p.done.load(Ordering::Relaxed));
+                let noun = if self.dirs_only {
+                    "carpetas encontradas"
+                } else {
+                    "archivos encontrados"
+                };
                 egui::Frame::group(ui.style())
                     .inner_margin(egui::Margin::same(12.0))
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.colored_label(warning_color(ui), egui::RichText::new("⏹").size(16.0));
-                            ui.label(
-                                egui::RichText::new("Escaneo cancelado")
-                                    .strong()
-                                    .color(warning_color(ui)),
-                            );
-                        });
+                        panel_title(ui, warning_color(ui), "⏹", "Escaneo cancelado");
                         ui.add_space(4.0);
                         ui.label(
-                            egui::RichText::new(
-                                "El escaneo se detuvo antes de terminar porque el usuario lo canceló.",
-                            )
+                            egui::RichText::new(format!(
+                                "Se detuvo tras {done} {noun} (⏱ {elapsed}). \
+                                 No se generaron reportes.",
+                            ))
                             .color(muted_color(ui))
                             .size(12.0),
                         );
-                    });
+                    })
+                    .response
             }
-            _ => {}
+            Status::Idle | Status::Running => return,
+        };
+
+        // El panel puede quedar por debajo del borde de la ventana: se
+        // desplaza hasta él una sola vez, al llegar el resultado.
+        if self.scroll_to_results {
+            panel.scroll_to_me(Some(egui::Align::BOTTOM));
+            self.scroll_to_results = false;
+        }
+
+        let open_result = match (action, open_folder) {
+            (Some((RowAction::Copy, path)), _) => {
+                ui.ctx().copy_text(path.display().to_string());
+                self.copied = Some((path, Instant::now()));
+                None
+            }
+            (Some((RowAction::Open, path)), _) => Some(
+                open_in_explorer(&path).map_err(|e| format!("No se pudo abrir el archivo: {e}")),
+            ),
+            // /select, abre el Explorador en la carpeta contenedora con el
+            // CSV ya resaltado.
+            (None, Some(path)) => {
+                Some(open_selecting(&path).map_err(|e| format!("No se pudo abrir la carpeta: {e}")))
+            }
+            (None, None) => None,
+        };
+        if let Some(result) = open_result {
+            // Una acción puntual exitosa limpia cualquier ui_error pendiente
+            // de una acción anterior, no solo lo reemplaza si falla de nuevo.
+            match result.err() {
+                Some(e) => self.set_ui_error(e),
+                None => self.clear_ui_error(),
+            }
         }
     }
 
@@ -893,17 +998,25 @@ impl App {
     /// corrida anterior en la carpeta de salida, pide confirmación antes de
     /// sobrescribirlos en vez de pisarlos en silencio.
     fn request_run(&mut self) {
+        // La carpeta pudo cambiar en disco sin que cambiara el texto: que la
+        // validación en vivo vuelva a mirar el disco en el próximo frame.
+        self.input_check.invalidate();
+        self.output_check.invalidate();
         let cfg = self.build_cfg();
-        if existing_reports(&cfg).is_empty() {
+        // Se calcula una sola vez aquí, no en cada frame mientras el diálogo
+        // de confirmación está abierto.
+        let existing = existing_reports(&cfg);
+        if existing.is_empty() {
             self.start_run(cfg);
         } else {
-            self.pending_confirm = Some(cfg);
+            self.pending_confirm = Some((cfg, existing));
         }
     }
 
     fn start_run(&mut self, cfg: RunConfig) {
         self.summary = None;
         self.error = None;
+        self.copied = None;
         self.clear_ui_error();
         self.status = Status::Running;
         self.started_at = Some(Instant::now());
@@ -958,47 +1071,15 @@ impl App {
         }
     }
 
-    fn compute_eta(&self, fraction: f32) -> String {
+    /// Segundos transcurridos de la corrida actual o de la última. Se congela
+    /// en cuanto el worker termina, en vez de seguir creciendo con cada
+    /// repaint mientras el usuario mira el resultado.
+    fn elapsed_secs(&self) -> f32 {
         let Some(start) = self.started_at else {
-            return "ETA: —".into();
+            return 0.0;
         };
-        // Congelamos el tiempo total en cuanto el worker termina (Done/Failed),
-        // en vez de recalcular `start.elapsed()` en cada repaint (que seguiría
-        // creciendo aunque el usuario mire la pantalla mucho después).
-        if let Some(finished) = self.finished_at {
-            return format!(
-                "⏱  Tiempo total: {}",
-                fmt_seconds(finished.duration_since(start).as_secs_f32())
-            );
-        }
-        // Durante la fase de escritura, `done`/`total` (y por lo tanto
-        // `fraction`) ya quedaron fijos en el conteo final antes de empezar
-        // a volcar los reportes a disco, así que sin este chequeo caería en
-        // la rama de `fraction >= 1.0` de más abajo y diría "Tiempo total"
-        // como si ya hubiera terminado, cuando el worker sigue corriendo.
-        let writing = self
-            .progress
-            .as_ref()
-            .is_some_and(|p| p.writing.load(Ordering::Relaxed));
-        if writing {
-            return format!(
-                "⏱  Escribiendo reportes… {}",
-                fmt_seconds(start.elapsed().as_secs_f32())
-            );
-        }
-        if fraction <= 0.001 {
-            return "ETA: calculando…".into();
-        }
-        if fraction >= 1.0 {
-            return format!(
-                "⏱  Tiempo total: {}",
-                fmt_seconds(start.elapsed().as_secs_f32())
-            );
-        }
-        let elapsed = start.elapsed().as_secs_f32();
-        let total_est = elapsed / fraction;
-        let remaining = (total_est - elapsed).max(0.0);
-        format!("⏳  ETA: {}", fmt_seconds(remaining))
+        let end = self.finished_at.unwrap_or_else(Instant::now);
+        end.duration_since(start).as_secs_f32()
     }
 }
 
@@ -1041,20 +1122,61 @@ fn folder_row(
     });
 }
 
-/// Fila de resultado: etiqueta + ruta con tooltip al pasar el mouse.
-fn result_row(ui: &mut egui::Ui, label: &str, path: &std::path::Path) {
-    let path_str = path.display().to_string();
-    let display = truncate_path_display(&path_str, 70);
+/// Acción pedida desde una fila de resultado.
+enum RowAction {
+    Open,
+    Copy,
+}
 
-    ui.horizontal_wrapped(|ui| {
+/// Fila de resultado: botones "Abrir" y "Copiar ruta", etiqueta y ruta
+/// (truncada, completa en el tooltip). `copied` muestra la confirmación de
+/// que esa ruta acaba de copiarse.
+fn result_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    path: &std::path::Path,
+    copied: bool,
+) -> Option<RowAction> {
+    let path_str = path.display().to_string();
+    let mut action = None;
+    ui.horizontal(|ui| {
+        if ui
+            .small_button("Abrir")
+            .on_hover_text(format!("Abrir el reporte {label}"))
+            .clicked()
+        {
+            action = Some(RowAction::Open);
+        }
+        let copy_label = if copied { "✔ Copiada" } else { "Copiar ruta" };
+        if ui
+            .small_button(copy_label)
+            .on_hover_text("Copiar la ruta al portapapeles")
+            .clicked()
+        {
+            action = Some(RowAction::Copy);
+        }
+        ui.label(egui::RichText::new(format!("{label}:")).strong().size(12.0));
         ui.label(
-            egui::RichText::new(format!("• {label}:"))
-                .strong()
-                .size(12.0),
-        );
-        ui.label(egui::RichText::new(display).monospace().size(11.0))
-            .on_hover_text(&path_str);
+            egui::RichText::new(truncate_path_display(&path_str, 60))
+                .monospace()
+                .size(11.0),
+        )
+        .on_hover_text(&path_str);
     });
+    action
+}
+
+/// Título de un panel de resultado: icono + texto, ambos en `color`.
+fn panel_title(ui: &mut egui::Ui, color: egui::Color32, icon: &str, text: &str) {
+    ui.horizontal(|ui| {
+        ui.colored_label(color, egui::RichText::new(icon).size(16.0));
+        ui.label(egui::RichText::new(text).strong().size(14.0).color(color));
+    });
+}
+
+/// Nota pequeña bajo un campo del formulario (validación o información).
+fn field_note(ui: &mut egui::Ui, color: egui::Color32, text: &str) {
+    ui.label(egui::RichText::new(text).color(color).size(11.0));
 }
 
 /// Mensaje de error completo para mostrar al usuario: el contexto y todas

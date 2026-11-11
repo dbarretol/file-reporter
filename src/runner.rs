@@ -30,13 +30,29 @@ pub fn parse_extensions<'a>(inputs: impl IntoIterator<Item = &'a str>) -> Vec<St
     out
 }
 
+/// Tamaño legible para el usuario, en unidades binarias (1 KB = 1024 B):
+/// `512 B`, `1.5 KB`, `2.3 GB`.
+pub fn format_size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
+}
+
 /// Reporte de progreso compartido entre el worker y la GUI.
 #[derive(Debug, Default)]
 pub struct Progress {
-    pub total: AtomicUsize,   // archivos detectados (estimado)
-    pub done: AtomicUsize,    // archivos procesados
-    pub cancel: AtomicBool,   // la GUI la pone en true para pedir cancelación
-    pub skipped: AtomicUsize, // carpetas/archivos que no se pudieron leer
+    /// Archivos (o carpetas, en modo solo carpetas) encontrados hasta ahora.
+    pub done: AtomicUsize,
+    /// La GUI la pone en `true` para pedir cancelación.
+    pub cancel: AtomicBool,
     /// `false` mientras se escanea el disco, `true` una vez terminado el
     /// escaneo y mientras se escriben report.csv/md/json. Permite que la
     /// GUI distinga la fase real en curso en vez de mostrar un genérico
@@ -48,22 +64,6 @@ impl Progress {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
     }
-
-    /// Devuelve la fracción de progreso en [0.0, 1.0].
-    /// Protegido contra NaN, infinitos y valores fuera de rango.
-    pub fn fraction(&self) -> f32 {
-        let total = self.total.load(Ordering::Relaxed);
-        let done = self.done.load(Ordering::Relaxed);
-        if total == 0 {
-            return 0.0;
-        }
-        let f = done as f32 / total as f32;
-        if f.is_finite() {
-            f.clamp(0.0, 1.0)
-        } else {
-            0.0
-        }
-    }
 }
 
 /// Resultado de una ejecución exitosa.
@@ -73,6 +73,9 @@ pub struct RunSummary {
     pub md_path: PathBuf,
     pub json_path: PathBuf,
     pub files_count: usize,
+    /// Suma de los tamaños de los archivos incluidos en el reporte (0 en
+    /// modo solo carpetas).
+    pub total_bytes: u64,
     /// Carpetas del árbol reportado (sin contar la raíz).
     pub dirs_count: usize,
     /// Si la corrida fue en modo solo carpetas (para elegir qué conteo mostrar).
@@ -111,13 +114,11 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
 
     // No hacemos una pasada previa solo para contar archivos: eso implicaría
     // leer el disco dos veces (una para contar, otra para construir el
-    // árbol), casi duplicando el tiempo total. El `total` de `Progress`
-    // queda en 0 ("desconocido") durante todo el escaneo; la GUI lo trata
-    // como progreso indeterminado y muestra el contador `done` en vivo. Al
-    // terminar, más abajo, `total` se fija al conteo final real.
+    // árbol), casi duplicando el tiempo total. El total se desconoce hasta
+    // el final; la GUI muestra el contador `done` en vivo y el tiempo
+    // transcurrido.
     if let Some(p) = &progress {
         p.done.store(0, Ordering::Relaxed);
-        p.total.store(0, Ordering::Relaxed);
     }
 
     // Única pasada por el disco: aquí ocurre todo el I/O real. Reportamos
@@ -150,9 +151,6 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
             records.len()
         };
         p.done.store(final_count, Ordering::Relaxed);
-        if p.total.load(Ordering::Relaxed) < final_count {
-            p.total.store(final_count, Ordering::Relaxed);
-        }
     }
 
     // Fase 4: crear la carpeta de salida (después de escanear, para que no
@@ -188,15 +186,13 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     write_result?;
 
     let skipped_count = skipped.load(Ordering::Relaxed);
-    if let Some(p) = &progress {
-        p.skipped.store(skipped_count, Ordering::Relaxed);
-    }
 
     Ok(RunSummary {
         csv_path,
         md_path,
         json_path,
         files_count: records.len(),
+        total_bytes: records.iter().map(|r| r.size_bytes).sum(),
         dirs_count,
         dirs_only: cfg.dirs_only,
         skipped_count,
@@ -231,6 +227,16 @@ mod tests {
     fn parse_extensions_drops_empty_and_duplicates() {
         assert_eq!(parse_extensions(["", " , ;", "txt", ".TXT"]), vec!["txt"]);
         assert!(parse_extensions(std::iter::empty()).is_empty());
+    }
+
+    #[test]
+    fn format_size_picks_a_readable_unit() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(1023), "1023 B");
+        assert_eq!(format_size(1024), "1.0 KB");
+        assert_eq!(format_size(1536), "1.5 KB");
+        assert_eq!(format_size(5 * 1024 * 1024), "5.0 MB");
+        assert_eq!(format_size(2_469_606_195), "2.3 GB");
     }
 
     #[test]
@@ -279,6 +285,7 @@ mod tests {
         let summary = run(&cfg, None).unwrap();
 
         assert_eq!(summary.files_count, 2);
+        assert_eq!(summary.total_bytes, 10); // "hello" + "world"
         assert_eq!(summary.skipped_count, 0);
         assert!(summary.csv_path.exists());
         assert!(summary.md_path.exists());
