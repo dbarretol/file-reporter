@@ -55,129 +55,104 @@ impl App {
             });
     }
 
-    /// ─── Sección: Resultado de la corrida ────────────────────────
+    /// ─── Resultado de la corrida: resumen en la fila de botones ──
+    /// El detalle se muestra en un modal (`render_results_modal`) que se abre
+    /// solo al terminar; aquí queda un resumen corto, alineado a la derecha,
+    /// con un botón para volver a abrirlo después de cerrarlo.
     pub(super) fn render_results(&mut self, ui: &mut egui::Ui) {
         let palette = Palette::of(ui);
-        let mut action: Option<(RowAction, PathBuf)> = None;
-        let mut open_folder: Option<PathBuf> = None;
-
-        let panel = match &self.state {
-            RunState::Done {
-                summary: s,
-                elapsed,
-            } => {
-                let elapsed = fmt_seconds(elapsed.as_secs_f32());
-                let copied = self.copied.as_ref().map(|(p, _)| p);
-                egui::Frame::group(ui.style())
-                    .inner_margin(egui::Margin::same(12))
-                    .show(ui, |ui| {
-                        panel_title(
-                            ui,
-                            palette.success,
-                            "✅",
-                            "Reportes generados correctamente",
-                        );
-                        ui.add_space(6.0);
-                        let counts = if s.dirs_only {
-                            format!("📊 {} carpetas · ⏱ {elapsed}", s.dirs_count)
-                        } else {
-                            format!(
-                                "📊 {} archivos · {} · ⏱ {elapsed}",
-                                s.files_count,
-                                runner::format_size(s.total_bytes)
-                            )
-                        };
-                        ui.label(counts);
-                        if s.skipped_count > 0 {
-                            ui.colored_label(
-                                palette.warning,
-                                format!(
-                                    "⚠ {} elementos no accesibles fueron omitidos",
-                                    s.skipped_count
-                                ),
-                            );
-                        }
-                        if !s.ext_stats.is_empty() {
-                            ui.add_space(6.0);
-                            render_type_stats(ui, &palette, &s.ext_stats, s.total_bytes);
-                        }
-                        ui.add_space(8.0);
-
-                        for (format, path) in &s.reports {
-                            let is_copied = copied == Some(path);
-                            if let Some(a) = result_row(ui, format.label(), path, is_copied) {
-                                action = Some((a, path.clone()));
-                            }
-                        }
-
-                        ui.add_space(10.0);
-                        // Abre la carpeta con el primer reporte resaltado
-                        // (siempre hay al menos uno: `runner::run` exige un
-                        // formato).
-                        let first = s.reports.first().map(|(_, p)| p.clone());
-                        if ui
-                            .add_enabled(
-                                first.is_some(),
-                                egui::Button::new(
-                                    egui::RichText::new("📂  Abrir carpeta de salida").size(12.0),
-                                ),
-                            )
-                            .clicked()
-                        {
-                            open_folder = first;
-                        }
-                    })
-                    .response
+        let (color, icon, text) = match &self.state {
+            RunState::Done { summary: s, .. } => {
+                let text = if s.dirs_only {
+                    format!("{} carpetas", s.dirs_count)
+                } else {
+                    format!(
+                        "{} archivos · {}",
+                        s.files_count,
+                        runner::format_size(s.total_bytes)
+                    )
+                };
+                (palette.success, "✅", text)
             }
-            RunState::Failed { error } => {
-                egui::Frame::group(ui.style())
-                    .inner_margin(egui::Margin::same(12))
-                    .fill(palette.error_fill)
-                    .show(ui, |ui| {
-                        panel_title(ui, palette.error, "❌", "Ha ocurrido un error");
-                        ui.add_space(4.0);
-                        ui.label(egui::RichText::new(error).monospace().size(12.0));
-                    })
-                    .response
-            }
-            RunState::Cancelled {
-                found,
-                dirs_only,
-                elapsed,
-            } => {
-                // Neutral, no rojo: cancelar no es un error del programa,
-                // es una acción deliberada del usuario.
-                let noun = found_noun(*dirs_only);
-                let elapsed = fmt_seconds(elapsed.as_secs_f32());
-                egui::Frame::group(ui.style())
-                    .inner_margin(egui::Margin::same(12))
-                    .show(ui, |ui| {
-                        panel_title(ui, palette.warning, "⏹", "Escaneo cancelado");
-                        ui.add_space(4.0);
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Se detuvo tras {found} {noun} (⏱ {elapsed}). \
-                                 No se generaron reportes.",
-                            ))
-                            .color(palette.muted)
-                            .size(12.0),
-                        );
-                    })
-                    .response
-            }
+            RunState::Failed { .. } => (palette.error, "❌", "Error".to_string()),
+            RunState::Cancelled { .. } => (palette.warning, "⏹", "Cancelado".to_string()),
             RunState::Idle | RunState::Running(_) => return,
         };
 
-        // El panel puede quedar por debajo del borde de la ventana: se
-        // desplaza hasta él una sola vez, al llegar el resultado.
-        if self.scroll_to_results {
-            panel.scroll_to_me(Some(egui::Align::BOTTOM));
-            self.scroll_to_results = false;
+        // De derecha a izquierda: botón, texto, icono.
+        let mut reopen = false;
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            reopen = ui
+                .add(egui::Button::new("Ver resultado").min_size(egui::vec2(0.0, 36.0)))
+                .clicked();
+            ui.label(text);
+            ui.colored_label(color, icon);
+        });
+        if reopen {
+            self.results_open = true;
+            // El modal ya se dibujó (cerrado) en este cuadro: sin repintar,
+            // no aparecería hasta el próximo movimiento del ratón.
+            ui.ctx().request_repaint();
+        }
+    }
+
+    /// `true` si el modal de resultado está abierto y hay algo que mostrar.
+    pub(super) fn results_visible(&self) -> bool {
+        self.results_open
+            && matches!(
+                self.state,
+                RunState::Done { .. } | RunState::Failed { .. } | RunState::Cancelled { .. }
+            )
+    }
+
+    /// Modal con el resultado de la última corrida: se abre al terminar y se
+    /// cierra con "Cerrar", Enter, Esc o un clic fuera. Bloquea el
+    /// formulario mientras está abierto, así que no hace falta desplazarse
+    /// hasta el final de la ventana para ver el resultado.
+    pub(super) fn render_results_modal(&mut self, ctx: &egui::Context) {
+        if !self.results_visible() {
+            return;
+        }
+        let mut action: Option<(RowAction, PathBuf)> = None;
+        let mut open_folder: Option<PathBuf> = None;
+        let mut close = false;
+
+        // Ancho y alto acotados a la ventana; si el contenido no cabe (muchas
+        // filas de tipos de archivo, error largo) se desplaza dentro del modal.
+        let screen = ctx.content_rect();
+        let width = (screen.width() - 80.0).clamp(280.0, 720.0);
+        let max_body = (screen.height() - 170.0).max(120.0);
+
+        let response = egui::Modal::new(egui::Id::unique("results_modal")).show(ctx, |ui| {
+            ui.set_width(width);
+            egui::ScrollArea::vertical()
+                .max_height(max_body)
+                .auto_shrink([false, true])
+                .show(ui, |ui| self.render_result_body(ui, &mut action));
+            ui.add_space(4.0);
+            ui.separator();
+            ui.horizontal(|ui| {
+                // Abre la carpeta con el primer reporte resaltado (siempre
+                // hay al menos uno: `runner::run` exige un formato).
+                if let RunState::Done { summary, .. } = &self.state {
+                    if let Some((_, first)) = summary.reports.first() {
+                        if ui.button("📂  Abrir carpeta de salida").clicked() {
+                            open_folder = Some(first.clone());
+                        }
+                    }
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    close = ui.button("Cerrar").clicked();
+                });
+            });
+        });
+        if close || response.should_close() {
+            self.results_open = false;
         }
 
         let open_result = match (action, open_folder) {
             (Some((RowAction::Copy, path)), _) => {
-                ui.ctx().copy_text(path.display().to_string());
+                ctx.copy_text(path.display().to_string());
                 self.copied = Some((path, Instant::now()));
                 None
             }
@@ -198,6 +173,90 @@ impl App {
                 Some(e) => self.set_ui_error(e),
                 None => self.clear_ui_error(),
             }
+        }
+    }
+
+    /// Contenido del modal según el resultado. Las acciones de las filas de
+    /// reportes se devuelven en `action` para aplicarlas fuera del modal.
+    fn render_result_body(&self, ui: &mut egui::Ui, action: &mut Option<(RowAction, PathBuf)>) {
+        let palette = Palette::of(ui);
+        match &self.state {
+            RunState::Done {
+                summary: s,
+                elapsed,
+            } => {
+                let elapsed = fmt_seconds(elapsed.as_secs_f32());
+                let copied = self.copied.as_ref().map(|(p, _)| p);
+                panel_title(
+                    ui,
+                    palette.success,
+                    "✅",
+                    "Reportes generados correctamente",
+                );
+                ui.add_space(6.0);
+                let counts = if s.dirs_only {
+                    format!("📊 {} carpetas · ⏱ {elapsed}", s.dirs_count)
+                } else {
+                    format!(
+                        "📊 {} archivos · {} · ⏱ {elapsed}",
+                        s.files_count,
+                        runner::format_size(s.total_bytes)
+                    )
+                };
+                ui.label(counts);
+                if s.skipped_count > 0 {
+                    ui.colored_label(
+                        palette.warning,
+                        format!(
+                            "⚠ {} elementos no accesibles fueron omitidos",
+                            s.skipped_count
+                        ),
+                    );
+                }
+                ui.add_space(8.0);
+                for (format, path) in &s.reports {
+                    let is_copied = copied == Some(path);
+                    if let Some(a) = result_row(ui, format.label(), path, is_copied) {
+                        *action = Some((a, path.clone()));
+                    }
+                }
+                if !s.ext_stats.is_empty() {
+                    ui.add_space(6.0);
+                    render_type_stats(ui, &palette, &s.ext_stats, s.total_bytes);
+                }
+            }
+            RunState::Failed { error } => {
+                panel_title(ui, palette.error, "❌", "Ha ocurrido un error");
+                ui.add_space(4.0);
+                egui::Frame::new()
+                    .fill(palette.error_fill)
+                    .corner_radius(egui::CornerRadius::same(4))
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new(error).monospace().size(12.0));
+                    });
+            }
+            RunState::Cancelled {
+                found,
+                dirs_only,
+                elapsed,
+            } => {
+                // Neutral, no rojo: cancelar no es un error del programa,
+                // es una acción deliberada del usuario.
+                let noun = found_noun(*dirs_only);
+                let elapsed = fmt_seconds(elapsed.as_secs_f32());
+                panel_title(ui, palette.warning, "⏹", "Escaneo cancelado");
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Se detuvo tras {found} {noun} (⏱ {elapsed}). \
+                         No se generaron reportes.",
+                    ))
+                    .color(palette.muted)
+                    .size(12.0),
+                );
+            }
+            RunState::Idle | RunState::Running(_) => {}
         }
     }
 }

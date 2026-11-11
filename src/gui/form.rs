@@ -318,6 +318,10 @@ impl App {
             {
                 self.clear();
             }
+
+            // Resumen de la última corrida, en la misma fila para que se vea
+            // sin desplazarse aunque la ventana sea baja.
+            self.render_results(ui);
         });
     }
 
@@ -331,7 +335,7 @@ impl App {
         self.dirs_only = false;
         self.state = RunState::Idle;
         self.pending_confirm = None;
-        self.scroll_to_results = false;
+        self.results_open = false;
         self.copied = None;
         self.clear_ui_error();
     }
