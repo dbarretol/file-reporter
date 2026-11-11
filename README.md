@@ -280,7 +280,13 @@ CLI y GUI comparten exactamente la misma lógica; solo cambia la forma de recibi
 src/
 ├── main.rs          # Punto de entrada: decide entre CLI y GUI
 ├── cli.rs           # Argumentos de línea de comandos (clap)
-├── gui.rs           # Interfaz gráfica (egui/eframe)
+├── gui/             # Interfaz gráfica (egui/eframe)
+│   ├── mod.rs       # Arranque, estado de la app y paneles fijos
+│   ├── form.rs      # Formulario y botones
+│   ├── run.rs       # Estado de la corrida e hilo de escaneo
+│   ├── results.rs   # Progreso y resultado
+│   ├── dialogs.rs   # Diálogo de sobrescritura y arrastrar y soltar
+│   └── …            # widgets, paleta de colores, utilidades
 ├── runner.rs        # Flujo común: escanear → escribir reportes
 ├── scanner.rs       # Recorrido paralelo del directorio
 ├── models.rs        # Node (árbol) y FileRecord (fila del CSV)
