@@ -137,7 +137,7 @@ El mismo ejecutable funciona en dos modos:
 4. *(Opcional)* Revisa las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas, o pulsa la sugerencia "Carpetas de proyectos" para quitarlas o volver a ponerlas.
 5. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
 6. *(Opcional)* Desmarca los **formatos** que no necesites (CSV, Markdown, JSON).
-7. Pulsa **▶ Generar reportes** (o Enter).
+7. Pulsa **▶ Generar reportes** (o Enter). Al terminar se abre una ventana con el resultado: los reportes (abrir o copiar su ruta), la carpeta de salida y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
 
 ### ⌨️ Línea de comandos
 
