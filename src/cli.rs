@@ -1,3 +1,4 @@
+use crate::runner::ReportFormat;
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -23,9 +24,22 @@ pub struct Cli {
     /// Incompatible con `--ext`, que no tendría efecto.
     #[arg(short = 'd', long = "dirs-only", conflicts_with = "extensions")]
     pub dirs_only: bool,
+
+    /// Reportes a generar (ej: -f csv,md). Si no se pasa, se generan los tres.
+    #[arg(short = 'f', long = "format", value_enum, value_delimiter = ',')]
+    pub formats: Vec<ReportFormat>,
 }
 
 impl Cli {
+    /// Formatos pedidos, o todos si no se indicó ninguno.
+    pub fn formats_or_all(&self) -> Vec<ReportFormat> {
+        if self.formats.is_empty() {
+            ReportFormat::ALL.to_vec()
+        } else {
+            self.formats.clone()
+        }
+    }
+
     /// Normaliza las extensiones con las mismas reglas que la GUI (ver
     /// `runner::parse_extensions`).
     pub fn normalized_extensions(&self) -> Vec<String> {
@@ -43,7 +57,22 @@ mod tests {
             extensions: extensions.into_iter().map(String::from).collect(),
             output: None,
             dirs_only: false,
+            formats: vec![],
         }
+    }
+
+    #[test]
+    fn formats_default_to_all_and_accept_aliases() {
+        let cli = Cli::try_parse_from(["file-reporter", "."]).unwrap();
+        assert_eq!(cli.formats_or_all(), ReportFormat::ALL.to_vec());
+
+        let cli = Cli::try_parse_from(["file-reporter", ".", "-f", "csv,markdown"]).unwrap();
+        assert_eq!(
+            cli.formats_or_all(),
+            vec![ReportFormat::Csv, ReportFormat::Md]
+        );
+
+        assert!(Cli::try_parse_from(["file-reporter", ".", "-f", "pdf"]).is_err());
     }
 
     #[test]

@@ -1,8 +1,40 @@
 use crate::{reporters, scanner};
 use anyhow::{bail, Context, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+
+/// Formato de reporte que se puede generar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ReportFormat {
+    Csv,
+    #[value(alias = "markdown")]
+    Md,
+    Json,
+}
+
+impl ReportFormat {
+    /// Todos los formatos, en el orden en que se escriben y se muestran.
+    pub const ALL: [ReportFormat; 3] = [ReportFormat::Csv, ReportFormat::Md, ReportFormat::Json];
+
+    /// Nombre fijo del archivo de este formato en la carpeta de salida.
+    pub fn file_name(self) -> &'static str {
+        match self {
+            ReportFormat::Csv => "report.csv",
+            ReportFormat::Md => "report.md",
+            ReportFormat::Json => "report.json",
+        }
+    }
+
+    /// Nombre para mostrar al usuario.
+    pub fn label(self) -> &'static str {
+        match self {
+            ReportFormat::Csv => "CSV",
+            ReportFormat::Md => "Markdown",
+            ReportFormat::Json => "JSON",
+        }
+    }
+}
 
 /// Parámetros de ejecución (válidos tanto para CLI como GUI).
 #[derive(Debug, Clone)]
@@ -11,6 +43,21 @@ pub struct RunConfig {
     pub output: PathBuf,
     pub extensions: Vec<String>,
     pub dirs_only: bool,
+    /// Reportes a generar (al menos uno), sin repetidos.
+    pub formats: Vec<ReportFormat>,
+}
+
+impl RunConfig {
+    /// Rutas de los reportes que generaría esta corrida, en el orden de
+    /// `ReportFormat::ALL` y sin repetidos, se hayan pedido como se hayan
+    /// pedido (p. ej. `-f json,csv,json`).
+    pub fn report_paths(&self) -> Vec<(ReportFormat, PathBuf)> {
+        ReportFormat::ALL
+            .into_iter()
+            .filter(|f| self.formats.contains(f))
+            .map(|f| (f, self.output.join(f.file_name())))
+            .collect()
+    }
 }
 
 /// Normaliza una lista de extensiones tal como la escribe el usuario, igual
@@ -69,9 +116,8 @@ impl Progress {
 /// Resultado de una ejecución exitosa.
 #[derive(Debug, Clone)]
 pub struct RunSummary {
-    pub csv_path: PathBuf,
-    pub md_path: PathBuf,
-    pub json_path: PathBuf,
+    /// Reportes generados, en el orden de `ReportFormat::ALL`.
+    pub reports: Vec<(ReportFormat, PathBuf)>,
     pub files_count: usize,
     /// Suma de los tamaños de los archivos incluidos en el reporte (0 en
     /// modo solo carpetas).
@@ -85,9 +131,23 @@ pub struct RunSummary {
     pub skipped_count: usize,
 }
 
-/// Ejecuta el proceso completo: escanear + generar 3 reportes.
+impl RunSummary {
+    /// Ruta del reporte de `format`, si se generó.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn path(&self, format: ReportFormat) -> Option<&Path> {
+        self.reports
+            .iter()
+            .find(|(f, _)| *f == format)
+            .map(|(_, p)| p.as_path())
+    }
+}
+
+/// Ejecuta el proceso completo: escanear + generar los reportes pedidos.
 /// Reporta progreso si se pasa un `Progress`.
 pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummary> {
+    if cfg.formats.is_empty() {
+        bail!("No se eligió ningún formato de reporte");
+    }
     if !cfg.input.exists() {
         bail!("La ruta no existe: {}", cfg.input.display());
     }
@@ -95,16 +155,18 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         bail!("La ruta no es un directorio: {}", cfg.input.display());
     }
 
-    let csv_path = cfg.output.join("report.csv");
-    let md_path = cfg.output.join("report.md");
-    let json_path = cfg.output.join("report.json");
+    let reports = cfg.report_paths();
 
-    // Excluir del escaneo los reportes de una corrida anterior (siempre) y,
-    // si la salida es una carpeta distinta de la entrada, la carpeta de
-    // salida completa (por si contiene sobras de corridas previas). Cuando
-    // output == input no se puede excluir la carpeta entera, solo los 3
+    // Excluir del escaneo los reportes de una corrida anterior (siempre, de
+    // los tres formatos: también los que esta corrida no genera) y, si la
+    // salida es una carpeta distinta de la entrada, la carpeta de salida
+    // completa (por si contiene sobras de corridas previas). Cuando
+    // output == input no se puede excluir la carpeta entera, solo los
     // archivos exactos.
-    let mut excluded = vec![csv_path.clone(), md_path.clone(), json_path.clone()];
+    let mut excluded: Vec<PathBuf> = ReportFormat::ALL
+        .iter()
+        .map(|f| cfg.output.join(f.file_name()))
+        .collect();
     if cfg.output != cfg.input {
         excluded.push(cfg.output.clone());
     }
@@ -174,9 +236,13 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
             )
         })?;
 
-        reporters::csv::write_csv(&tree, &csv_path)?;
-        reporters::markdown::write_markdown(&tree, &md_path)?;
-        reporters::json::write_json(&tree, &json_path)?;
+        for (format, path) in &reports {
+            match format {
+                ReportFormat::Csv => reporters::csv::write_csv(&tree, path)?,
+                ReportFormat::Md => reporters::markdown::write_markdown(&tree, path)?,
+                ReportFormat::Json => reporters::json::write_json(&tree, path)?,
+            }
+        }
         Ok(())
     })();
 
@@ -188,9 +254,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     let skipped_count = skipped.load(Ordering::Relaxed);
 
     Ok(RunSummary {
-        csv_path,
-        md_path,
-        json_path,
+        reports,
         files_count,
         total_bytes,
         dirs_count,
@@ -247,6 +311,7 @@ mod tests {
             output: dir.path().join("out"),
             extensions: vec![],
             dirs_only: false,
+            formats: ReportFormat::ALL.to_vec(),
         };
         let err = run(&cfg, None).unwrap_err();
         assert!(err.to_string().contains("no existe"));
@@ -262,6 +327,7 @@ mod tests {
             output: dir.path().join("out"),
             extensions: vec![],
             dirs_only: false,
+            formats: ReportFormat::ALL.to_vec(),
         };
         let err = run(&cfg, None).unwrap_err();
         assert!(err.to_string().contains("no es un directorio"));
@@ -281,16 +347,59 @@ mod tests {
             output: output.clone(),
             extensions: vec![],
             dirs_only: false,
+            formats: ReportFormat::ALL.to_vec(),
         };
         let summary = run(&cfg, None).unwrap();
 
         assert_eq!(summary.files_count, 2);
         assert_eq!(summary.total_bytes, 10); // "hello" + "world"
         assert_eq!(summary.skipped_count, 0);
-        assert!(summary.csv_path.exists());
-        assert!(summary.md_path.exists());
-        assert!(summary.json_path.exists());
-        assert_eq!(summary.csv_path, output.join("report.csv"));
+        assert_eq!(summary.reports.len(), 3);
+        assert!(summary.reports.iter().all(|(_, p)| p.exists()));
+        assert_eq!(
+            summary.path(ReportFormat::Csv),
+            Some(output.join("report.csv").as_path())
+        );
+    }
+
+    #[test]
+    fn run_generates_only_the_requested_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        let output = dir.path().join("out");
+        fs::create_dir(&input).unwrap();
+        fs::write(input.join("a.txt"), "hello").unwrap();
+
+        let cfg = RunConfig {
+            input,
+            output: output.clone(),
+            extensions: vec![],
+            dirs_only: false,
+            // Desordenado y con repetidos: se normaliza al orden de ALL.
+            formats: vec![ReportFormat::Json, ReportFormat::Csv, ReportFormat::Json],
+        };
+        let summary = run(&cfg, None).unwrap();
+
+        let formats: Vec<ReportFormat> = summary.reports.iter().map(|(f, _)| *f).collect();
+        assert_eq!(formats, vec![ReportFormat::Csv, ReportFormat::Json]);
+        assert!(output.join("report.csv").exists());
+        assert!(output.join("report.json").exists());
+        assert!(!output.join("report.md").exists());
+    }
+
+    #[test]
+    fn run_fails_without_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = RunConfig {
+            input: dir.path().to_path_buf(),
+            output: dir.path().join("out"),
+            extensions: vec![],
+            dirs_only: false,
+            formats: vec![],
+        };
+        let err = run(&cfg, None).unwrap_err();
+        assert!(err.to_string().contains("formato"));
+        assert!(!dir.path().join("out").exists());
     }
 
     #[test]
@@ -308,14 +417,15 @@ mod tests {
             output,
             extensions: vec![],
             dirs_only: true,
+            formats: ReportFormat::ALL.to_vec(),
         };
         let summary = run(&cfg, None).unwrap();
 
         assert_eq!(summary.files_count, 0);
         assert_eq!(summary.dirs_count, 1);
         assert!(summary.dirs_only);
-        assert!(summary.md_path.exists());
-        let md_content = fs::read_to_string(&summary.md_path).unwrap();
+        let md_path = summary.path(ReportFormat::Md).unwrap();
+        let md_content = fs::read_to_string(md_path).unwrap();
         assert!(md_content.contains("subfolder"));
         assert!(!md_content.contains("a.txt"));
         assert!(!md_content.contains("b.txt"));
@@ -333,6 +443,7 @@ mod tests {
             output: dir.path().join("out"),
             extensions: vec![],
             dirs_only: false,
+            formats: ReportFormat::ALL.to_vec(),
         };
         let progress = Progress::new();
         run(&cfg, Some(progress.clone())).unwrap();
@@ -360,6 +471,7 @@ mod tests {
             output,
             extensions: vec![],
             dirs_only: false,
+            formats: ReportFormat::ALL.to_vec(),
         };
         let progress = Progress::new();
         let result = run(&cfg, Some(progress.clone()));

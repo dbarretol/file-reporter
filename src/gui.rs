@@ -1,4 +1,4 @@
-use crate::runner::{self, Progress, RunConfig, RunSummary};
+use crate::runner::{self, Progress, ReportFormat, RunConfig, RunSummary};
 use anyhow::Result;
 use eframe::egui;
 use serde::{Deserialize, Serialize};
@@ -54,6 +54,8 @@ struct App {
     output_path: String,
     extensions: String,
     dirs_only: bool,
+    /// Casillas CSV / Markdown / JSON, en el orden de `ReportFormat::ALL`.
+    formats: [bool; 3],
     status: Status,
 
     // Comunicación con el worker
@@ -148,29 +150,59 @@ const UI_ERROR_TTL: std::time::Duration = std::time::Duration::from_secs(5);
 /// `#[serde(default)]`: un estado guardado por una versión anterior (sin
 /// algún campo nuevo, p. ej. `dirs_only`) sigue cargándose con el valor por
 /// defecto para ese campo, en vez de fallar y perder todo lo recordado.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(default)]
 struct PersistedState {
     input_path: String,
     output_path: String,
     extensions: String,
     dirs_only: bool,
+    /// Formatos marcados, en el orden de `ReportFormat::ALL`. Por defecto
+    /// (también al cargar un estado de una versión que no lo guardaba), los
+    /// tres.
+    formats: [bool; 3],
 }
+
+impl Default for PersistedState {
+    fn default() -> Self {
+        Self {
+            input_path: String::new(),
+            output_path: String::new(),
+            extensions: String::new(),
+            dirs_only: false,
+            formats: ALL_FORMATS,
+        }
+    }
+}
+
+/// Todos los formatos marcados (valor por defecto y al pulsar "Limpiar").
+const ALL_FORMATS: [bool; 3] = [true; 3];
 
 const PERSIST_KEY: &str = eframe::APP_KEY;
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let mut app = App::default();
-        if let Some(storage) = cc.storage {
-            if let Some(state) = eframe::get_value::<PersistedState>(storage, PERSIST_KEY) {
-                app.input_path = state.input_path;
-                app.output_path = state.output_path;
-                app.extensions = state.extensions;
-                app.dirs_only = state.dirs_only;
-            }
+        let state = cc
+            .storage
+            .and_then(|s| eframe::get_value::<PersistedState>(s, PERSIST_KEY))
+            .unwrap_or_default();
+        App {
+            input_path: state.input_path,
+            output_path: state.output_path,
+            extensions: state.extensions,
+            dirs_only: state.dirs_only,
+            formats: state.formats,
+            ..App::default()
         }
-        app
+    }
+
+    /// Formatos marcados en el formulario.
+    fn selected_formats(&self) -> Vec<ReportFormat> {
+        ReportFormat::ALL
+            .into_iter()
+            .zip(self.formats)
+            .filter_map(|(f, on)| on.then_some(f))
+            .collect()
     }
 
     /// Establece un `ui_error` puntual y arranca su temporizador de
@@ -433,6 +465,7 @@ impl eframe::App for App {
             output_path: self.output_path.clone(),
             extensions: self.extensions.clone(),
             dirs_only: self.dirs_only,
+            formats: self.formats,
         };
         eframe::set_value(storage, PERSIST_KEY, &state);
     }
@@ -519,13 +552,12 @@ impl App {
                 )
                 .on_disabled_hover_text("Sin efecto en modo solo carpetas.")
                 .on_hover_text(
-                    "Solo la última parte tras el último punto cuenta como extensión: \
-                     \"foo.tar.gz\" se filtra con \"gz\", no con \"tar.gz\". \
-                     Los archivos sin punto en el nombre (p. ej. \"LICENSE\", \"Makefile\") \
-                     no tienen extensión y quedan fuera de cualquier filtro no vacío.",
+                    "Ej.: pdf, docx. Vacío = todas.\n\
+                     Cuenta lo que va tras el último punto: \"foo.tar.gz\" → gz.",
                 );
 
-                // Sugerencias rápidas
+                // Sugerencias rápidas: cada una se suma a lo escrito (o se
+                // quita, si ya estaba entera), en vez de reemplazarlo.
                 ui.add_space(4.0);
                 ui.horizontal_wrapped(|ui| {
                     ui.label(
@@ -539,14 +571,18 @@ impl App {
                         "mp4, mkv, avi",
                         "txt, md",
                     ] {
+                        let active = preset_is_active(&self.extensions, preset);
                         if ui
                             .add_enabled(
                                 ext_enabled,
-                                egui::Button::new(egui::RichText::new(preset).size(11.0)).small(),
+                                egui::Button::new(egui::RichText::new(preset).size(11.0))
+                                    .small()
+                                    .selected(active),
                             )
+                            .on_hover_text(if active { "Quitar" } else { "Añadir" })
                             .clicked()
                         {
-                            self.extensions = preset.to_string();
+                            self.extensions = toggle_preset(&self.extensions, preset);
                         }
                     }
                 });
@@ -556,6 +592,18 @@ impl App {
                     enabled,
                     egui::Checkbox::new(&mut self.dirs_only, "📂 Solo carpetas (omitir archivos)"),
                 );
+
+                // Formatos a generar
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("📄  Generar:").size(12.0));
+                    for (format, on) in ReportFormat::ALL.iter().zip(self.formats.iter_mut()) {
+                        ui.add_enabled(enabled, egui::Checkbox::new(on, format.label()));
+                    }
+                });
+                if !self.formats.contains(&true) {
+                    field_note(ui, error_color(ui), "✖ Elige al menos un formato");
+                }
             });
     }
 
@@ -575,6 +623,9 @@ impl App {
         }
         if self.output_check.status == PathStatus::NotDir {
             return Some("La carpeta de salida no es válida.");
+        }
+        if !self.formats.contains(&true) {
+            return Some("Elige al menos un formato.");
         }
         None
     }
@@ -745,7 +796,8 @@ impl App {
                 && (!self.input_path.is_empty()
                     || !self.output_path.is_empty()
                     || !self.extensions.is_empty()
-                    || self.dirs_only);
+                    || self.dirs_only
+                    || self.formats != ALL_FORMATS);
             if ui
                 .add_enabled(
                     can_clear,
@@ -756,6 +808,7 @@ impl App {
                 self.input_path.clear();
                 self.output_path.clear();
                 self.extensions.clear();
+                self.formats = ALL_FORMATS;
                 self.dirs_only = false;
                 self.summary = None;
                 self.error = None;
@@ -875,23 +928,28 @@ impl App {
                         }
                         ui.add_space(8.0);
 
-                        for (label, path) in [
-                            ("CSV", &s.csv_path),
-                            ("Markdown", &s.md_path),
-                            ("JSON", &s.json_path),
-                        ] {
+                        for (format, path) in &s.reports {
                             let is_copied = copied.as_ref() == Some(path);
-                            if let Some(a) = result_row(ui, label, path, is_copied) {
+                            if let Some(a) = result_row(ui, format.label(), path, is_copied) {
                                 action = Some((a, path.clone()));
                             }
                         }
 
                         ui.add_space(10.0);
+                        // Abre la carpeta con el primer reporte resaltado
+                        // (siempre hay al menos uno: `runner::run` exige un
+                        // formato).
+                        let first = s.reports.first().map(|(_, p)| p.clone());
                         if ui
-                            .button(egui::RichText::new("📂  Abrir carpeta de salida").size(12.0))
+                            .add_enabled(
+                                first.is_some(),
+                                egui::Button::new(
+                                    egui::RichText::new("📂  Abrir carpeta de salida").size(12.0),
+                                ),
+                            )
                             .clicked()
                         {
-                            open_folder = Some(s.csv_path.clone());
+                            open_folder = first;
                         }
                     })
                     .response
@@ -995,6 +1053,7 @@ impl App {
             output,
             extensions,
             dirs_only: self.dirs_only,
+            formats: self.selected_formats(),
         }
     }
 
@@ -1204,13 +1263,39 @@ fn dropped_path_to_input_dir(path: PathBuf) -> PathBuf {
 }
 
 /// Reportes de una corrida anterior que ya existen en la carpeta de salida
-/// de `cfg` y que esta corrida sobrescribiría.
+/// de `cfg` y que esta corrida sobrescribiría (solo los de los formatos
+/// elegidos: los demás no se tocan).
 fn existing_reports(cfg: &RunConfig) -> Vec<PathBuf> {
-    ["report.csv", "report.md", "report.json"]
+    cfg.report_paths()
         .into_iter()
-        .map(|name| cfg.output.join(name))
+        .map(|(_, p)| p)
         .filter(|p| p.exists())
         .collect()
+}
+
+/// `true` si todas las extensiones de `preset` ya están en el campo.
+fn preset_is_active(field: &str, preset: &str) -> bool {
+    let current = runner::parse_extensions([field]);
+    runner::parse_extensions([preset])
+        .iter()
+        .all(|e| current.contains(e))
+}
+
+/// Pulsar una sugerencia: si ya estaba entera, quita sus extensiones; si no,
+/// añade las que falten al final, conservando lo que el usuario escribió.
+fn toggle_preset(field: &str, preset: &str) -> String {
+    let mut current = runner::parse_extensions([field]);
+    let preset = runner::parse_extensions([preset]);
+    if preset.iter().all(|e| current.contains(e)) {
+        current.retain(|e| !preset.contains(e));
+    } else {
+        for e in preset {
+            if !current.contains(&e) {
+                current.push(e);
+            }
+        }
+    }
+    current.join(", ")
 }
 
 /// Trunca un string a `max_chars` caracteres (no bytes), prefijando "…"
@@ -1319,6 +1404,33 @@ mod tests {
         let msg = error_chain(&err);
         assert!(msg.starts_with("Error al construir el árbol de directorios: "));
         assert!(msg.len() > "Error al construir el árbol de directorios: ".len());
+    }
+
+    #[test]
+    fn toggle_preset_adds_missing_and_keeps_user_text() {
+        assert_eq!(toggle_preset("", "pdf, docx"), "pdf, docx");
+        assert_eq!(toggle_preset("txt", "pdf, docx"), "txt, pdf, docx");
+        // Solo añade lo que falta.
+        assert_eq!(toggle_preset("pdf; .TXT", "pdf, docx"), "pdf, txt, docx");
+    }
+
+    #[test]
+    fn toggle_preset_removes_it_when_already_complete() {
+        assert!(preset_is_active("txt, pdf, docx", "pdf, docx"));
+        assert_eq!(toggle_preset("txt, pdf, docx", "pdf, docx"), "txt");
+        assert!(!preset_is_active("pdf", "pdf, docx"));
+    }
+
+    #[test]
+    fn persisted_state_from_older_version_keeps_all_formats() {
+        // Un estado guardado antes de existir `formats` no debe dejar la
+        // GUI sin ningún formato marcado.
+        // (eframe lo guarda en RON; `#[serde(default)]` actúa igual en
+        // cualquier formato de serde, así que basta con JSON.)
+        let old = r#"{"input_path":"C:\\x","output_path":"","extensions":"","dirs_only":false}"#;
+        let state: PersistedState = serde_json::from_str(old).unwrap();
+        assert_eq!(state.formats, ALL_FORMATS);
+        assert_eq!(state.input_path, "C:\\x");
     }
 
     #[test]
