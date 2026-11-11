@@ -73,7 +73,7 @@ struct App {
     ui_error: Option<String>,
     /// Cuándo se puso `ui_error`, para poder auto-expirarlo (ver
     /// `UI_ERROR_TTL`) en vez de dejarlo pegado en la barra de estado para
-    /// siempre (tarea 32 en tasks.md).
+    /// siempre.
     ui_error_at: Option<Instant>,
 }
 
@@ -135,7 +135,7 @@ enum Status {
     Failed,
     /// El usuario pidió cancelar y el worker terminó en respuesta a eso.
     /// Distinto de `Failed`: no es un error, así que la UI no debe mostrar
-    /// el panel rojo de error (ver tarea 27 en tasks.md).
+    /// el panel rojo de error.
     Cancelled,
 }
 
@@ -209,7 +209,7 @@ impl eframe::App for App {
         }
 
         // Auto-expira el `ui_error` puntual en vez de dejarlo pegado en la
-        // barra de estado para siempre (ver tarea 32 en tasks.md).
+        // barra de estado para siempre.
         if let Some(at) = self.ui_error_at {
             let elapsed = at.elapsed();
             if elapsed >= UI_ERROR_TTL {
@@ -357,7 +357,7 @@ impl App {
     fn render_form(&mut self, ui: &mut egui::Ui) {
         // Mientras el diálogo de confirmación de sobrescritura está abierto,
         // el formulario de fondo debe quedar inerte: no es un modal real de
-        // egui (ver tarea 33 en tasks.md), así que sin este chequeo el
+        // egui, así que sin este chequeo el
         // usuario podría seguir editando rutas/extensiones "por debajo" del
         // diálogo mientras lo tiene abierto.
         let enabled = self.status != Status::Running && self.pending_confirm.is_none();
@@ -511,7 +511,7 @@ impl App {
 
         let mut confirmed = false;
         // Esc cierra el diálogo como si se pulsara "Cancelar" — sin esto, el
-        // diálogo no responde al teclado en absoluto (ver tarea 33).
+        // diálogo no responde al teclado en absoluto.
         let mut cancelled = ctx.input(|i| i.key_pressed(egui::Key::Escape));
 
         egui::Window::new("⚠  Sobrescribir reportes existentes")
@@ -810,7 +810,7 @@ impl App {
                 if let Some(result) = open_result {
                     // Una acción puntual exitosa limpia cualquier ui_error
                     // pendiente de una acción anterior, no solo lo reemplaza
-                    // si falla de nuevo (ver tarea 32).
+                    // si falla de nuevo.
                     match result.err() {
                         Some(e) => self.set_ui_error(e),
                         None => self.clear_ui_error(),
@@ -837,7 +837,7 @@ impl App {
             }
             Status::Cancelled => {
                 // Neutral, no rojo: cancelar no es un error del programa,
-                // es una acción deliberada del usuario (ver tarea 27).
+                // es una acción deliberada del usuario.
                 egui::Frame::group(ui.style())
                     .inner_margin(egui::Margin::same(12.0))
                     .show(ui, |ui| {
@@ -935,8 +935,7 @@ impl App {
                     // Distinguimos cancelación de error real preguntando la
                     // bandera compartida (la puso en `true` el botón
                     // "Cancelar"), no comparando el texto del error: así no
-                    // depende de que el mensaje de `runner::run` no cambie
-                    // (ver tarea 27).
+                    // depende de que el mensaje de `runner::run` no cambie.
                     Ok(Err(e)) => {
                         if progress.cancel.load(Ordering::Relaxed) {
                             WorkerMsg::Cancelled
@@ -1071,8 +1070,7 @@ fn clean_path_input(s: &str) -> &str {
 /// El campo "carpeta a escanear" espera un directorio. Si el usuario suelta
 /// un archivo suelto (no una carpeta) por drag & drop, usar su ruta tal
 /// cual dejaría un `input_path` que `runner::run` rechazaría con "La ruta
-/// no es un directorio" — en su lugar, usamos la carpeta que lo contiene
-/// (ver tarea 30 en tasks.md).
+/// no es un directorio" — en su lugar, usamos la carpeta que lo contiene.
 fn dropped_path_to_input_dir(path: PathBuf) -> PathBuf {
     if path.is_dir() {
         path

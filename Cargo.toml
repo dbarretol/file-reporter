@@ -24,7 +24,7 @@ rayon = "1.10"
 # Rounding -> CornerRadius y cambia Margin/CornerRadius/Shadow de f32 a
 # i8/u8, y 0.34+ reemplaza el método `update` de `eframe::App` por `ui`
 # con una firma distinta — ambos son refactors de API reales, no fixes,
-# y quedan fuera del alcance de esta tarea (ver tasks.md, punto 25).
+# y se harán como una migración aparte.
 # 0.30 sí trae mejoras de plataforma sobre 0.28 sin requerir cambios de
 # código en este crate (build+test+clippy verificados sin tocar src/).
 #

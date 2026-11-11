@@ -320,7 +320,7 @@ cargo clippy --all-targets -- -D warnings   # lint
 
 Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)) y cubren escaneo, filtros, modo solo carpetas, cancelación, los tres formatos de salida y la protección del CSV. En Windows también crean *junctions* para probar el manejo de enlaces sin necesidad de permisos de administrador.
 
-Cada push a `master` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu.
+Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu.
 
 ---
 
@@ -337,7 +337,7 @@ Cada push a `master` y cada pull request pasan por [GitHub Actions](.github/work
 
 ## 🤝 Contribuciones
 
-Las contribuciones son bienvenidas. Para cambios grandes, abre primero un *issue* para comentar la propuesta. Después, haz un fork, crea una rama y envía un *pull request* describiendo los cambios.
+Las contribuciones son bienvenidas. Para cambios grandes, abre primero un *issue* para comentar la propuesta. Después, haz un fork, crea una rama desde `dev` y envía un *pull request* contra `dev` describiendo los cambios (`main` solo recibe versiones estables).
 
 ---
 

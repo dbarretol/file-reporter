@@ -21,11 +21,10 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
 /// excluidas construidas a partir de una (los report.csv/md/json propios)
 /// no coincidirían con las rutas descubiertas al recorrer la otra si se
 /// comparan con `==` (case-sensitive, como hace `PathBuf`), y una corrida
-/// terminaría incluyéndose a sí misma en su propio reporte (reintroduce el
-/// bug #4 — ver tarea 28 en tasks.md). `to_lowercase()` (no
+/// terminaría incluyéndose a sí misma en su propio reporte. `to_lowercase()` (no
 /// `eq_ignore_ascii_case`) porque NTFS pliega mayúsculas/minúsculas a nivel
 /// Unicode, no solo ASCII: una ruta con `Ñ`/`á` tecleada con otra caja debe
-/// seguir coincidiendo (ver tarea 35). En otros sistemas de archivos (ext4
+/// seguir coincidiendo. En otros sistemas de archivos (ext4
 /// en Linux, típicamente case-sensitive) sí puede haber dos archivos
 /// distintos que solo difieran en mayúsculas, así que ahí se mantiene la
 /// comparación exacta.
@@ -70,8 +69,8 @@ fn path_is_excluded(p: &Path, excluded: &[PathBuf]) -> bool {
 /// (8x el valor por defecto de Rust) para dar margen amplio ante anidamientos
 /// extremos (rutas largas `\\?\` de Windows, symlinks NTFS anidados antes de
 /// resolverse, etc.). Un recorrido iterativo con pila explícita eliminaría el
-/// límite por completo, pero se descarta por ahora: la auditoría marca este
-/// punto como bajo riesgo y una pila de 16 MB ya cubre profundidades muy por
+/// límite por completo, pero se descarta por ahora: es un riesgo bajo y una
+/// pila de 16 MB ya cubre profundidades muy por
 /// encima de cualquier estructura de archivos real.
 pub fn build_tree(
     path: &Path,
@@ -121,8 +120,7 @@ fn build_tree_inner(
             // drag & drop): rechazarla porque resulta ser un symlink/junction
             // (p. ej. una carpeta de OneDrive) es una sorpresa confusa, no
             // una protección útil. La protección contra ciclos solo hace
-            // falta para los descendientes (rama `else`, sin cambios) — ver
-            // tarea 29 en tasks.md. `fs::metadata` sí sigue el enlace, a
+            // falta para los descendientes (rama `else`). `fs::metadata` sí sigue el enlace, a
             // diferencia de `symlink_metadata`.
             metadata = fs::metadata(path).with_context(|| {
                 format!(
@@ -423,7 +421,7 @@ mod tests {
         // Simula al usuario tecleando la ruta de salida con una
         // capitalización distinta a la de disco (misma carpeta física,
         // p. ej. por haber escrito entrada y salida en cajas de texto
-        // separadas con distinto casing). Ver tarea 28.
+        // separadas con distinto casing).
         let mixed_case_excluded = PathBuf::from(
             dir.path()
                 .join("report.csv")
@@ -451,7 +449,7 @@ mod tests {
         // `eq_ignore_ascii_case` (la implementación anterior) no pliega
         // caracteres no-ASCII; NTFS sí es case-insensitive a nivel Unicode,
         // así que una carpeta con "Ñ"/"año" debe excluirse igual sin
-        // importar la caja usada (ver tarea 35).
+        // importar la caja usada.
         let dir = tempfile::tempdir().unwrap();
         let sub = dir.path().join("AÑO2026");
         fs::create_dir(&sub).unwrap();
@@ -501,7 +499,7 @@ mod tests {
 
         // Caso 1: la raíz misma es una junction. Antes del fix, `build_tree`
         // fallaba con "Enlace simbólico omitido" aunque el usuario la eligió
-        // a propósito (ver tarea 29). Ahora debe seguirla y escanear el
+        // a propósito. Ahora debe seguirla y escanear el
         // contenido real.
         let link_root = dir.path().join("link_root");
         make_junction(&link_root, &real_root);

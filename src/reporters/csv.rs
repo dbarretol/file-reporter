@@ -98,7 +98,7 @@ mod tests {
 
         let content = std::fs::read_to_string(&output).unwrap();
         // Regresión: sin el fix, Excel evaluaría estos campos como fórmulas
-        // al abrir report.csv (CSV injection, ver tarea 37).
+        // al abrir report.csv (CSV injection).
         assert!(content.contains("'=cmd|'/c calc'!A1"));
         assert!(content.contains("'-informe"));
         assert!(content.contains("'@evil"));
