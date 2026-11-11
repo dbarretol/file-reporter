@@ -5,14 +5,8 @@ use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::SystemTime;
 
-/// Convierte SystemTime a DateTime<Utc> de forma segura.
-fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
-    Some(DateTime::<Utc>::from(t))
-}
-
-/// `true` si `p` coincide con alguna ruta de `excluded`.
+/// `true` si dos nombres o rutas designan lo mismo en el sistema de archivos.
 ///
 /// En Windows (NTFS) y macOS (APFS/HFS+ por defecto), el sistema de
 /// archivos es case-insensitive pero case-preserving: si el usuario tecleó
@@ -20,34 +14,93 @@ fn to_datetime(t: SystemTime) -> Option<DateTime<Utc>> {
 /// misma carpeta física (p. ej. `C:\Data` vs `c:\data`), las rutas
 /// excluidas construidas a partir de una (los report.csv/md/json propios)
 /// no coincidirían con las rutas descubiertas al recorrer la otra si se
-/// comparan con `==` (case-sensitive, como hace `PathBuf`), y una corrida
-/// terminaría incluyéndose a sí misma en su propio reporte. `to_lowercase()` (no
-/// `eq_ignore_ascii_case`) porque NTFS pliega mayúsculas/minúsculas a nivel
-/// Unicode, no solo ASCII: una ruta con `Ñ`/`á` tecleada con otra caja debe
-/// seguir coincidiendo. En otros sistemas de archivos (ext4
-/// en Linux, típicamente case-sensitive) sí puede haber dos archivos
-/// distintos que solo difieran en mayúsculas, así que ahí se mantiene la
-/// comparación exacta.
+/// comparan de forma exacta, y una corrida terminaría incluyéndose a sí
+/// misma en su propio reporte. Se pliega con `to_lowercase` de Unicode (no
+/// solo ASCII) porque NTFS es case-insensitive a nivel Unicode: una ruta con
+/// `Ñ`/`á` tecleada con otra caja debe seguir coincidiendo. Se compara
+/// carácter a carácter, sin reservar memoria: se llama una vez por cada
+/// entrada del árbol. En otros sistemas de archivos (ext4 en Linux,
+/// típicamente case-sensitive) sí puede haber dos archivos distintos que
+/// solo difieran en mayúsculas, así que ahí la comparación es exacta.
 #[cfg(any(windows, target_os = "macos"))]
-fn path_is_excluded(p: &Path, excluded: &[PathBuf]) -> bool {
-    let p_lower = p.to_string_lossy().to_lowercase();
-    excluded
-        .iter()
-        .any(|e| e.to_string_lossy().to_lowercase() == p_lower)
+fn same_name(a: &str, b: &str) -> bool {
+    a.chars()
+        .flat_map(char::to_lowercase)
+        .eq(b.chars().flat_map(char::to_lowercase))
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
-fn path_is_excluded(p: &Path, excluded: &[PathBuf]) -> bool {
-    excluded.contains(&p.to_path_buf())
+fn same_name(a: &str, b: &str) -> bool {
+    a == b
+}
+
+/// Rutas exactas que se omiten del escaneo (los reportes propios y, si es
+/// distinta de la entrada, la carpeta de salida).
+struct Exclusions {
+    /// `(nombre final, ruta completa)` de cada exclusión. El nombre permite
+    /// descartar casi todas las entradas con una comparación corta, sin
+    /// construir ni comparar su ruta completa.
+    entries: Vec<(String, String)>,
+}
+
+impl Exclusions {
+    fn new(paths: &[PathBuf]) -> Self {
+        let entries = paths
+            .iter()
+            .map(|p| {
+                let name = p
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                (name, p.to_string_lossy().into_owned())
+            })
+            .collect();
+        Self { entries }
+    }
+
+    fn contains(&self, name: &str, path: &Path) -> bool {
+        self.entries.iter().any(|(ex_name, ex_path)| {
+            same_name(name, ex_name) && same_name(&path.to_string_lossy(), ex_path)
+        })
+    }
+}
+
+/// Parámetros del recorrido, iguales para toda la recursión.
+struct Scan<'a> {
+    filters: &'a [String],
+    dirs_only: bool,
+    counter: Option<&'a AtomicUsize>,
+    exclusions: Exclusions,
+    cancel: Option<&'a AtomicBool>,
+    skipped: Option<&'a AtomicUsize>,
+}
+
+impl Scan<'_> {
+    fn bump(counter: Option<&AtomicUsize>) {
+        if let Some(c) = counter {
+            c.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancel.is_some_and(|c| c.load(Ordering::Relaxed))
+    }
+
+    fn passes_filter(&self, extension: &str) -> bool {
+        self.filters.is_empty() || self.filters.iter().any(|f| f == extension)
+    }
 }
 
 /// Construye recursivamente el árbol jerárquico.
 /// Los errores de lectura (permisos, etc.) se ignoran silenciosamente
 /// por archivo/carpeta para que el escaneo sea robusto.
 ///
+/// `filters` son extensiones ya normalizadas (minúsculas, sin punto; ver
+/// `runner::parse_extensions`).
+///
 /// Si se pasa un `counter`, se incrementa por cada archivo que pase el filtro
-/// de extensión, a medida que se procesa (durante el I/O real), para reportar
-/// progreso granular a la GUI.
+/// de extensión (o por cada carpeta, en modo solo carpetas), a medida que se
+/// procesa, para reportar progreso granular a la GUI.
 ///
 /// `excluded` son rutas exactas (típicamente los reportes de la carpeta de
 /// salida) que se omiten del escaneo para que una corrida no se incluya a
@@ -61,17 +114,22 @@ fn path_is_excluded(p: &Path, excluded: &[PathBuf]) -> bool {
 /// ni por cancelación, que son casos intencionales, no fallos), para que el
 /// resultado final pueda avisar de que el reporte quedó incompleto.
 ///
+/// Rendimiento: el tipo de cada entrada y los metadatos de los archivos salen
+/// de la propia lectura del directorio (`DirEntry::file_type`/`metadata`),
+/// que en Windows no requiere abrir cada archivo. Los archivos que no pasan
+/// el filtro, o todos en modo solo carpetas, se descartan antes de pedir sus
+/// metadatos. Las subcarpetas se recorren en paralelo.
+///
 /// Recursión y límite de pila: cada nivel de profundidad del árbol añade un
 /// marco a la pila del hilo que lo recorre (el propio `rayon::par_iter` de
 /// más abajo, por work-stealing, también ejecuta parte de la recursión en el
 /// hilo que la inicia, no solo en hilos "hijos"). `main.rs` configura tanto
 /// el pool global de rayon como el hilo worker de la GUI con 16 MB de pila
 /// (8x el valor por defecto de Rust) para dar margen amplio ante anidamientos
-/// extremos (rutas largas `\\?\` de Windows, symlinks NTFS anidados antes de
-/// resolverse, etc.). Un recorrido iterativo con pila explícita eliminaría el
-/// límite por completo, pero se descarta por ahora: es un riesgo bajo y una
-/// pila de 16 MB ya cubre profundidades muy por
-/// encima de cualquier estructura de archivos real.
+/// extremos (rutas largas `\\?\` de Windows, etc.). Un recorrido iterativo
+/// con pila explícita eliminaría el límite por completo, pero se descarta por
+/// ahora: es un riesgo bajo y una pila de 16 MB ya cubre profundidades muy
+/// por encima de cualquier estructura de archivos real.
 pub fn build_tree(
     path: &Path,
     filters: &[String],
@@ -81,181 +139,155 @@ pub fn build_tree(
     cancel: Option<&AtomicBool>,
     skipped: Option<&AtomicUsize>,
 ) -> Result<Node> {
-    build_tree_inner(
-        path, filters, dirs_only, counter, excluded, cancel, skipped, true,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build_tree_inner(
-    path: &Path,
-    filters: &[String],
-    dirs_only: bool,
-    counter: Option<&AtomicUsize>,
-    excluded: &[PathBuf],
-    cancel: Option<&AtomicBool>,
-    skipped: Option<&AtomicUsize>,
-    is_root: bool,
-) -> Result<Node> {
-    if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+    let scan = Scan {
+        filters,
+        dirs_only,
+        counter,
+        exclusions: Exclusions::new(excluded),
+        cancel,
+        skipped,
+    };
+    if scan.cancelled() {
         bail!("Escaneo cancelado");
     }
 
-    // symlink_metadata (a diferencia de metadata) no sigue enlaces simbólicos
-    // ni junctions de Windows, evitando recursión infinita en ciclos.
-    let mut metadata = match fs::symlink_metadata(path) {
-        Ok(m) => m,
-        Err(e) => {
-            if let Some(s) = skipped {
-                s.fetch_add(1, Ordering::Relaxed);
-            }
-            return Err(e)
-                .with_context(|| format!("No se pudo leer metadatos de: {}", path.display()));
-        }
-    };
-
-    if metadata.file_type().is_symlink() {
-        if is_root {
-            // La raíz la eligió el usuario a propósito (selector de carpeta o
-            // drag & drop): rechazarla porque resulta ser un symlink/junction
-            // (p. ej. una carpeta de OneDrive) es una sorpresa confusa, no
-            // una protección útil. La protección contra ciclos solo hace
-            // falta para los descendientes (rama `else`). `fs::metadata` sí sigue el enlace, a
-            // diferencia de `symlink_metadata`.
-            metadata = fs::metadata(path).with_context(|| {
-                format!(
-                    "No se pudo resolver el enlace de la carpeta raíz: {}",
-                    path.display()
-                )
-            })?;
-        } else {
-            bail!("Enlace simbólico omitido: {}", path.display());
-        }
-    }
-
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string());
+    // La raíz la eligió el usuario a propósito (selector de carpeta o drag &
+    // drop): si resulta ser un symlink/junction (p. ej. una carpeta de
+    // OneDrive) se sigue, en vez de rechazarla. La protección contra ciclos
+    // solo hace falta para los descendientes, que nunca se siguen (ver
+    // `scan_dir`). `fs::metadata` sigue el enlace; `symlink_metadata`, no.
+    let metadata = fs::metadata(path)
+        .with_context(|| format!("No se pudo leer metadatos de: {}", path.display()))?;
 
     if metadata.is_dir() {
-        // En modo solo carpetas el progreso cuenta carpetas (la raíz no, igual
-        // que en `count_dirs`), para que el contador en vivo coincida con el
-        // total final del resumen.
-        if dirs_only && !is_root {
-            if let Some(c) = counter {
-                c.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-
-        // Recolectamos rutas hijas, omitiendo las excluidas (reportes propios)
-        let entries: Vec<PathBuf> = match fs::read_dir(path) {
-            Ok(rd) => rd
-                .filter_map(|e| match e {
-                    Ok(entry) => Some(entry.path()),
-                    Err(_) => {
-                        if let Some(s) = skipped {
-                            s.fetch_add(1, Ordering::Relaxed);
-                        }
-                        None
-                    }
-                })
-                .filter(|p| !path_is_excluded(p, excluded))
-                .collect(),
-            Err(_) => {
-                // sin permisos -> no podemos listar el contenido; queda como
-                // carpeta vacía en el árbol, pero contamos la pérdida.
-                if let Some(s) = skipped {
-                    s.fetch_add(1, Ordering::Relaxed);
-                }
-                Vec::new()
-            }
-        };
-
-        // Procesamos hijos en paralelo
-        let mut children: Vec<Node> = entries
-            .par_iter()
-            .filter_map(|p| {
-                build_tree_inner(
-                    p, filters, dirs_only, counter, excluded, cancel, skipped, false,
-                )
-                .ok()
-            })
-            .filter(|n| match n {
-                // Conservamos archivos que pasen el filtro (y si no se pidió solo directorios)
-                Node::File { extension, .. } => {
-                    !dirs_only
-                        && (filters.is_empty()
-                            || filters.iter().any(|f| f.eq_ignore_ascii_case(extension)))
-                }
-                // Conservamos directorios
-                Node::Directory { children, .. } => {
-                    if dirs_only {
-                        true
-                    } else {
-                        !children.is_empty() || filters.is_empty()
-                    }
-                }
-            })
-            .collect();
-
-        // Orden alfabético: directorios primero, luego archivos
-        children.sort_by(|a, b| match (a.is_dir(), b.is_dir()) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name().to_lowercase().cmp(&b.name().to_lowercase()),
-        });
-
-        Ok(Node::Directory {
-            name,
-            path: path.to_path_buf(),
-            children,
-        })
+        scan_dir(&scan, path, true)
     } else {
-        if dirs_only {
-            // Los archivos no aparecen en el árbol/reporte final en este modo
-            // (el padre los descarta) ni cuentan para el progreso, que en
-            // este modo cuenta carpetas.
-            return Ok(Node::File {
-                name: name.clone(),
-                path: path.to_path_buf(),
-                size_mb: 0.0,
-                size_bytes: 0,
-                extension: String::new(),
-                created: None,
-                modified: None,
-            });
-        }
+        let name = display_name(path);
+        Ok(file_node(name, path.to_path_buf(), &metadata))
+    }
+}
 
-        let size_bytes = metadata.len();
-        let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
-        let extension = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
+/// Nombre a mostrar de una ruta: su último componente o, si no tiene (p. ej.
+/// la raíz de una unidad, `C:\`), la ruta completa.
+fn display_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
+}
 
-        // Reportamos progreso aquí (durante el I/O real), no al aplanar el árbol.
-        // Solo contamos archivos que pasarán el filtro de extensión, para que
-        // el contador refleje lo que terminará en el reporte.
-        let passes_filter =
-            filters.is_empty() || filters.iter().any(|f| f.eq_ignore_ascii_case(&extension));
-        if passes_filter {
-            if let Some(c) = counter {
-                c.fetch_add(1, Ordering::Relaxed);
+fn file_node(name: String, path: PathBuf, metadata: &fs::Metadata) -> Node {
+    let size_bytes = metadata.len();
+    let extension = file_extension(&name);
+    Node::File {
+        name,
+        path,
+        size_mb: size_bytes as f64 / (1024.0 * 1024.0),
+        size_bytes,
+        extension,
+        created: metadata.created().ok().map(DateTime::<Utc>::from),
+        modified: metadata.modified().ok().map(DateTime::<Utc>::from),
+    }
+}
+
+/// Extensión en minúsculas: lo que va tras el último punto del nombre
+/// (`foo.tar.gz` → `gz`); vacía si no hay punto o el nombre empieza por él
+/// (`.gitignore`), igual que `Path::extension`.
+fn file_extension(name: &str) -> String {
+    Path::new(name)
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
+}
+
+/// Recorre una carpeta y, en paralelo, sus subcarpetas.
+fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
+    if scan.cancelled() {
+        bail!("Escaneo cancelado");
+    }
+
+    // En modo solo carpetas el progreso cuenta carpetas (la raíz no, igual
+    // que en `count_dirs`), para que el contador en vivo coincida con el
+    // total final del resumen.
+    if scan.dirs_only && !is_root {
+        Scan::bump(scan.counter);
+    }
+
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+    let mut children: Vec<Node> = Vec::new();
+
+    match fs::read_dir(path) {
+        Ok(entries) => {
+            for entry in entries {
+                let Ok(entry) = entry else {
+                    Scan::bump(scan.skipped);
+                    continue;
+                };
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let entry_path = entry.path();
+                if scan.exclusions.contains(&name, &entry_path) {
+                    continue;
+                }
+                let Ok(file_type) = entry.file_type() else {
+                    Scan::bump(scan.skipped);
+                    continue;
+                };
+                if file_type.is_symlink() {
+                    // Symlinks y junctions descendientes no se siguen: evita
+                    // recursión infinita en ciclos. Omisión intencional, no
+                    // cuenta como error.
+                    continue;
+                }
+                if file_type.is_dir() {
+                    subdirs.push(entry_path);
+                    continue;
+                }
+                // Archivo: en modo solo carpetas no aparece en el reporte, y
+                // con filtro solo interesan los que pasan; en ambos casos se
+                // descarta sin pedir sus metadatos.
+                if scan.dirs_only || !scan.passes_filter(&file_extension(&name)) {
+                    continue;
+                }
+                match entry.metadata() {
+                    Ok(metadata) => {
+                        Scan::bump(scan.counter);
+                        children.push(file_node(name, entry_path, &metadata));
+                    }
+                    Err(_) => Scan::bump(scan.skipped),
+                }
             }
         }
-
-        Ok(Node::File {
-            name: name.clone(),
-            path: path.to_path_buf(),
-            size_mb,
-            size_bytes,
-            extension,
-            created: metadata.created().ok().and_then(to_datetime),
-            modified: metadata.modified().ok().and_then(to_datetime),
-        })
+        Err(_) => {
+            // Sin permisos -> no podemos listar el contenido; queda como
+            // carpeta vacía en el árbol, pero contamos la pérdida.
+            Scan::bump(scan.skipped);
+        }
     }
+
+    let dirs: Vec<Node> = subdirs
+        .par_iter()
+        .filter_map(|p| scan_dir(scan, p, false).ok())
+        // Con filtro activo, una carpeta que quedó vacía tras filtrar se
+        // descarta en vez de aparecer sin contenido. En modo solo carpetas
+        // se conservan todas.
+        .filter(|n| match n {
+            Node::Directory { children, .. } => {
+                scan.dirs_only || scan.filters.is_empty() || !children.is_empty()
+            }
+            Node::File { .. } => true,
+        })
+        .collect();
+    children.extend(dirs);
+
+    // Orden alfabético sin distinguir mayúsculas: directorios primero, luego
+    // archivos. La clave se calcula una vez por elemento, no en cada
+    // comparación.
+    children.sort_by_cached_key(|n| (!n.is_dir(), n.name().to_lowercase()));
+
+    Ok(Node::Directory {
+        name: display_name(path),
+        path: path.to_path_buf(),
+        children,
+    })
 }
 
 /// Cuenta las carpetas del árbol, sin incluir la raíz.
@@ -270,16 +302,33 @@ pub fn count_dirs(node: &Node) -> usize {
     }
 }
 
-/// Aplana el árbol a una lista de FileRecord (para CSV).
-/// El árbol ya viene filtrado por extensión desde `build_tree`,
-/// así que aquí solo recorremos y serializamos. Es una operación en memoria
-/// (el árbol ya fue construido), por lo que no reporta progreso.
-pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>) {
+/// Número de archivos del árbol y suma de sus tamaños en bytes.
+pub fn file_totals(node: &Node) -> (usize, u64) {
+    match node {
+        Node::Directory { children, .. } => children
+            .iter()
+            .map(file_totals)
+            .fold((0, 0), |acc, x| (acc.0 + x.0, acc.1 + x.1)),
+        Node::File { size_bytes, .. } => (1, *size_bytes),
+    }
+}
+
+/// Recorre los archivos del árbol, en orden, y llama a `f` con el
+/// `FileRecord` (fila del CSV) de cada uno. Se detiene en el primer error.
+///
+/// Las filas se generan de una en una en vez de acumularlas en un `Vec`: con
+/// cientos de miles de archivos, esa lista duplicaba en memoria lo que ya
+/// guarda el árbol. El árbol ya viene filtrado desde `build_tree`.
+pub fn try_for_each_record(
+    node: &Node,
+    f: &mut impl FnMut(FileRecord) -> Result<()>,
+) -> Result<()> {
     match node {
         Node::Directory { children, .. } => {
             for c in children {
-                flatten_to_records(c, out);
+                try_for_each_record(c, f)?;
             }
+            Ok(())
         }
         Node::File {
             path,
@@ -299,7 +348,7 @@ pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>) {
                 .map(|p| p.display().to_string())
                 .unwrap_or_default();
 
-            out.push(FileRecord {
+            f(FileRecord {
                 name: stem,
                 extension: extension.clone(),
                 size_mb: (size_mb * 1000.0).round() / 1000.0, // 3 decimales
@@ -316,9 +365,19 @@ pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>) {
                 modified_iso: modified.map(|d| d.to_rfc3339()).unwrap_or_default(),
                 directory: dir,
                 full_path: path.display().to_string(),
-            });
+            })
         }
     }
+}
+
+/// Todas las filas del CSV en una lista (solo para tests).
+#[cfg(test)]
+pub fn flatten_to_records(node: &Node, out: &mut Vec<FileRecord>) {
+    try_for_each_record(node, &mut |r| {
+        out.push(r);
+        Ok(())
+    })
+    .expect("el visitante no falla");
 }
 
 #[cfg(test)]
@@ -390,6 +449,44 @@ mod tests {
         flatten_to_records(&tree, &mut records);
         assert!(records.is_empty());
         assert_eq!(count_dirs(&tree), 2);
+    }
+
+    #[test]
+    fn build_tree_counter_counts_only_files_that_pass_the_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        fs::write(dir.path().join("b.jpg"), "x").unwrap();
+        fs::write(dir.path().join("sub").join("c.txt"), "x").unwrap();
+
+        let counter = AtomicUsize::new(0);
+        let filters = vec!["txt".to_string()];
+        build_tree(dir.path(), &filters, false, Some(&counter), &[], None, None).unwrap();
+        assert_eq!(counter.load(Ordering::Relaxed), 2);
+
+        // En modo solo carpetas cuenta carpetas (sin la raíz), no archivos.
+        let counter = AtomicUsize::new(0);
+        build_tree(dir.path(), &[], true, Some(&counter), &[], None, None).unwrap();
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn build_tree_excludes_exact_paths_not_every_entry_with_that_name() {
+        // Se excluye `report.csv` de la raíz (el reporte propio), pero no un
+        // `report.csv` de otra carpeta: el atajo por nombre no debe bastar.
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(dir.path().join("report.csv"), "x").unwrap();
+        fs::write(sub.join("report.csv"), "x").unwrap();
+
+        let excluded = vec![dir.path().join("report.csv")];
+        let tree = build_tree(dir.path(), &[], false, None, &excluded, None, None).unwrap();
+
+        let mut records = Vec::new();
+        flatten_to_records(&tree, &mut records);
+        assert_eq!(records.len(), 1);
+        assert!(records[0].full_path.contains("sub"));
     }
 
     #[test]
