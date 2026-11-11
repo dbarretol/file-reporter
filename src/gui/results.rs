@@ -5,6 +5,7 @@ use super::run::{found_noun, RunState};
 use super::util::{fmt_seconds, open_in_explorer, open_selecting};
 use super::widgets::{panel_title, result_row, RowAction};
 use super::App;
+use crate::models::ExtStat;
 use crate::runner;
 use eframe::egui;
 use std::path::PathBuf;
@@ -95,6 +96,10 @@ impl App {
                                     s.skipped_count
                                 ),
                             );
+                        }
+                        if !s.ext_stats.is_empty() {
+                            ui.add_space(6.0);
+                            render_type_stats(ui, &palette, &s.ext_stats, s.total_bytes);
                         }
                         ui.add_space(8.0);
 
@@ -194,5 +199,72 @@ impl App {
                 None => self.clear_ui_error(),
             }
         }
+    }
+}
+
+/// Tipos de archivo mostrados en el panel de resultado; el resto se agrupa
+/// en "Otros". El detalle completo queda en report.md.
+const TOP_TYPES: usize = 8;
+
+/// Tabla plegable con los tipos de archivo que más ocupan: cantidad,
+/// tamaño y una barra proporcional al porcentaje del tamaño total.
+fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], total: u64) {
+    egui::CollapsingHeader::new(format!("📁 Tipos de archivo ({})", stats.len()))
+        .default_open(true)
+        .show(ui, |ui| {
+            egui::Grid::new("type_stats")
+                .num_columns(4)
+                .spacing([14.0, 4.0])
+                .show(ui, |ui| {
+                    for row in runner::top_types(stats, TOP_TYPES) {
+                        ui.label(egui::RichText::new(&row.label).monospace());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(format!("{} arch.", row.count));
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(runner::format_size(row.bytes));
+                        });
+                        ui.horizontal(|ui| {
+                            let fraction = if total == 0 {
+                                0.0
+                            } else {
+                                row.bytes as f32 / total as f32
+                            };
+                            share_bar(ui, palette, fraction);
+                            ui.label(
+                                egui::RichText::new(runner::format_percent(row.bytes, total))
+                                    .color(palette.muted)
+                                    .size(12.0),
+                            );
+                        });
+                        ui.end_row();
+                    }
+                });
+            if stats.len() > TOP_TYPES + 1 {
+                ui.label(
+                    egui::RichText::new("La lista completa está en report.md.")
+                        .color(palette.muted)
+                        .size(11.0),
+                );
+            }
+        });
+}
+
+/// Barra horizontal de ancho fijo rellena en `fraction` (0–1).
+fn share_bar(ui: &mut egui::Ui, palette: &Palette, fraction: f32) {
+    let size = egui::vec2(120.0, 8.0);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let radius = egui::CornerRadius::same(2);
+    let painter = ui.painter();
+    painter.rect_filled(rect, radius, palette.muted.gamma_multiply(0.25));
+    // Un mínimo visible para tipos que ocupan muy poco pero no cero.
+    let width = if fraction > 0.0 {
+        (rect.width() * fraction.min(1.0)).max(2.0)
+    } else {
+        0.0
+    };
+    if width > 0.0 {
+        let filled = egui::Rect::from_min_size(rect.min, egui::vec2(width, rect.height()));
+        painter.rect_filled(filled, radius, palette.accent);
     }
 }

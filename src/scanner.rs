@@ -1,7 +1,8 @@
-use crate::models::{FileRecord, Node};
+use crate::models::{ExtStat, FileRecord, Node};
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -326,6 +327,43 @@ pub fn file_totals(node: &Node) -> (usize, u64) {
             .fold((0, 0), |acc, x| (acc.0 + x.0, acc.1 + x.1)),
         Node::File { size_bytes, .. } => (1, *size_bytes),
     }
+}
+
+/// Cantidad y tamaño de los archivos del árbol agrupados por extensión,
+/// de mayor a menor tamaño total (a igual tamaño, más archivos primero y
+/// luego por nombre, para que el orden sea estable entre corridas).
+pub fn extension_stats(node: &Node) -> Vec<ExtStat> {
+    fn walk<'a>(node: &'a Node, acc: &mut HashMap<&'a str, (usize, u64)>) {
+        match node {
+            Node::Directory { children, .. } => children.iter().for_each(|c| walk(c, acc)),
+            Node::File {
+                extension,
+                size_bytes,
+                ..
+            } => {
+                let e = acc.entry(extension.as_str()).or_default();
+                e.0 += 1;
+                e.1 += size_bytes;
+            }
+        }
+    }
+    let mut acc = HashMap::new();
+    walk(node, &mut acc);
+    let mut stats: Vec<ExtStat> = acc
+        .into_iter()
+        .map(|(ext, (count, bytes))| ExtStat {
+            extension: ext.to_string(),
+            count,
+            bytes,
+        })
+        .collect();
+    stats.sort_by(|a, b| {
+        b.bytes
+            .cmp(&a.bytes)
+            .then(b.count.cmp(&a.count))
+            .then_with(|| a.extension.cmp(&b.extension))
+    });
+    stats
 }
 
 /// Recorre los archivos del árbol, en orden, y llama a `f` con el
@@ -777,5 +815,46 @@ mod tests {
         )
         .unwrap();
         assert_eq!(node_names(&tree), vec!["src".to_string()]);
+    }
+
+    #[test]
+    fn extension_stats_groups_counts_and_sorts_by_size() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("a.txt"), "12345").unwrap();
+        fs::write(dir.path().join("sub").join("b.TXT"), "123").unwrap();
+        fs::write(dir.path().join("c.pdf"), "1234567890").unwrap();
+        fs::write(dir.path().join("README"), "1").unwrap();
+        fs::write(dir.path().join("d.rs"), "1").unwrap();
+
+        let tree = build_tree(dir.path(), &ScanOptions::default()).unwrap();
+        let stats = extension_stats(&tree);
+        let rows: Vec<(&str, usize, u64)> = stats
+            .iter()
+            .map(|s| (s.extension.as_str(), s.count, s.bytes))
+            .collect();
+        // pdf (10 B) > txt (8 B, mayúsculas agrupadas); empate de 1 B
+        // entre "" y "rs" → orden alfabético.
+        assert_eq!(
+            rows,
+            vec![("pdf", 1, 10), ("txt", 2, 8), ("", 1, 1), ("rs", 1, 1)]
+        );
+        assert_eq!(stats[2].label(), "(sin extensión)");
+        assert_eq!(stats[0].label(), ".pdf");
+    }
+
+    #[test]
+    fn extension_stats_is_empty_in_dirs_only_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let tree = build_tree(
+            dir.path(),
+            &ScanOptions {
+                dirs_only: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(extension_stats(&tree).is_empty());
     }
 }

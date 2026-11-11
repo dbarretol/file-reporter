@@ -1,3 +1,4 @@
+use crate::models::ExtStat;
 use crate::reporters;
 use crate::scanner::{self, ScanOptions};
 use anyhow::{bail, Context, Result};
@@ -130,6 +131,50 @@ pub fn format_size(bytes: u64) -> String {
     format!("{value:.1} {}", UNITS[unit])
 }
 
+/// Porcentaje legible con un decimal (`25.0 %`); `<0.1 %` para partes no
+/// nulas muy pequeñas, que si no se mostrarían como `0.0 %`.
+pub fn format_percent(part: u64, total: u64) -> String {
+    if total == 0 {
+        return "0 %".to_string();
+    }
+    let p = part as f64 * 100.0 / total as f64;
+    if part > 0 && p < 0.1 {
+        "<0.1 %".to_string()
+    } else {
+        format!("{p:.1} %")
+    }
+}
+
+/// Fila del resumen de tipos de archivo que muestran la CLI y la GUI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeRow {
+    pub label: String,
+    pub count: usize,
+    pub bytes: u64,
+}
+
+/// Los `n` tipos con más tamaño y, si quedan más, una fila "Otros (k tipos)"
+/// que los suma. Si solo sobraría uno, se muestra tal cual en vez de
+/// agruparlo. `stats` debe venir ordenado (como `RunSummary::ext_stats`).
+pub fn top_types(stats: &[ExtStat], n: usize) -> Vec<TypeRow> {
+    let row = |s: &ExtStat| TypeRow {
+        label: s.label(),
+        count: s.count,
+        bytes: s.bytes,
+    };
+    if stats.len() <= n + 1 {
+        return stats.iter().map(row).collect();
+    }
+    let (top, rest) = stats.split_at(n);
+    let mut rows: Vec<TypeRow> = top.iter().map(row).collect();
+    rows.push(TypeRow {
+        label: format!("Otros ({} tipos)", rest.len()),
+        count: rest.iter().map(|s| s.count).sum(),
+        bytes: rest.iter().map(|s| s.bytes).sum(),
+    });
+    rows
+}
+
 /// Reporte de progreso compartido entre el worker y la GUI.
 #[derive(Debug, Default)]
 pub struct Progress {
@@ -166,6 +211,9 @@ pub struct RunSummary {
     /// Carpetas/archivos que no se pudieron leer (permisos, etc.) y por lo
     /// tanto no aparecen en el reporte, aunque existan en disco.
     pub skipped_count: usize,
+    /// Archivos agrupados por extensión, de mayor a menor tamaño (vacío en
+    /// modo solo carpetas).
+    pub ext_stats: Vec<ExtStat>,
 }
 
 impl RunSummary {
@@ -243,6 +291,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     // se generan al escribirlo, sin una lista intermedia.
     let (files_count, total_bytes) = scanner::file_totals(&tree);
     let dirs_count = scanner::count_dirs(&tree);
+    let ext_stats = scanner::extension_stats(&tree);
 
     // Asegurar que el contador refleje la realidad final (en modo solo
     // carpetas el progreso cuenta carpetas, no archivos)
@@ -279,7 +328,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         for (format, path) in &reports {
             match format {
                 ReportFormat::Csv => reporters::csv::write_csv(&tree, path)?,
-                ReportFormat::Md => reporters::markdown::write_markdown(&tree, path)?,
+                ReportFormat::Md => reporters::markdown::write_markdown(&tree, &ext_stats, path)?,
                 ReportFormat::Json => reporters::json::write_json(&tree, path)?,
             }
         }
@@ -300,6 +349,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         dirs_count,
         dirs_only: cfg.dirs_only,
         skipped_count,
+        ext_stats,
     })
 }
 
@@ -341,6 +391,51 @@ mod tests {
         assert_eq!(format_size(1536), "1.5 KB");
         assert_eq!(format_size(5 * 1024 * 1024), "5.0 MB");
         assert_eq!(format_size(2_469_606_195), "2.3 GB");
+    }
+
+    #[test]
+    fn format_percent_handles_zero_and_tiny_values() {
+        assert_eq!(format_percent(0, 0), "0 %");
+        assert_eq!(format_percent(1, 4), "25.0 %");
+        assert_eq!(format_percent(1, 10_000), "<0.1 %");
+        assert_eq!(format_percent(0, 10), "0.0 %");
+    }
+
+    fn stat(ext: &str, count: usize, bytes: u64) -> ExtStat {
+        ExtStat {
+            extension: ext.to_string(),
+            count,
+            bytes,
+        }
+    }
+
+    #[test]
+    fn top_types_groups_the_rest_under_otros() {
+        let stats = [
+            stat("pdf", 1, 100),
+            stat("jpg", 2, 50),
+            stat("txt", 3, 20),
+            stat("", 4, 10),
+        ];
+        let rows = top_types(&stats, 2);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].label, ".pdf");
+        assert_eq!(
+            rows[2],
+            TypeRow {
+                label: "Otros (2 tipos)".to_string(),
+                count: 7,
+                bytes: 30,
+            }
+        );
+    }
+
+    #[test]
+    fn top_types_does_not_group_a_single_leftover() {
+        let stats = [stat("pdf", 1, 100), stat("jpg", 2, 50), stat("txt", 3, 20)];
+        let labels: Vec<String> = top_types(&stats, 2).into_iter().map(|r| r.label).collect();
+        assert_eq!(labels, vec![".pdf", ".jpg", ".txt"]);
+        assert!(top_types(&[], 5).is_empty());
     }
 
     #[test]
@@ -435,6 +530,10 @@ mod tests {
         assert_eq!(summary.skipped_count, 0);
         let md = fs::read_to_string(dir.path().join("out").join("report.md")).unwrap();
         assert!(!md.contains("target"));
+        // Las estadísticas solo cuentan lo reportado (sin el .exe omitido).
+        assert_eq!(summary.ext_stats.len(), 1);
+        assert_eq!(summary.ext_stats[0].extension, "rs");
+        assert!(md.contains("| .rs | 1 | 1 B | 100.0 % |"));
     }
 
     #[test]
