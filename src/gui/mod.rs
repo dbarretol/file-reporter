@@ -291,7 +291,8 @@ impl App {
             });
     }
 
-    /// Panel central: formulario, acciones, progreso y resultado.
+    /// Panel central: formulario, acciones (con el resumen del resultado) y
+    /// progreso. El detalle del resultado va en un modal aparte.
     fn render_main(&mut self, ui: &mut egui::Ui) {
         egui::CentralPanel::default_margins().show(ui, |ui| {
             // Sin auto_shrink el ancho del área es siempre el del panel, no el

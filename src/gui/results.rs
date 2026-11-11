@@ -1,4 +1,5 @@
-//! Paneles de progreso y de resultado de la corrida.
+//! Panel de progreso, ventana (modal) con el resultado de la corrida y
+//! resumen de una línea en la fila de botones.
 
 use super::palette::Palette;
 use super::run::{found_noun, RunState};
@@ -13,8 +14,8 @@ use std::time::Instant;
 
 impl App {
     /// ─── Sección: Progreso (solo mientras hay un escaneo en curso) ──
-    /// Al terminar, el panel desaparece: el resultado (con el tiempo total)
-    /// se muestra una sola vez, en `render_results`.
+    /// Al terminar, el panel desaparece y el resultado (con el tiempo total)
+    /// se muestra en el modal de `render_results_modal`.
     pub(super) fn render_progress(&self, ui: &mut egui::Ui) {
         let RunState::Running(run) = &self.state else {
             return;
@@ -261,7 +262,7 @@ impl App {
     }
 }
 
-/// Tipos de archivo mostrados en el panel de resultado; el resto se agrupa
+/// Tipos de archivo mostrados en el modal de resultado; el resto se agrupa
 /// en "Otros". El detalle completo queda en report.md.
 const TOP_TYPES: usize = 8;
 

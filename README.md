@@ -6,7 +6,7 @@
 
 **Escanea una carpeta y obtén, en segundos, un inventario completo de su contenido en CSV, Markdown y JSON.**
 
-File Reporter es una herramienta escrita en Rust con **interfaz gráfica** (para uso diario) y **línea de comandos** (para scripts y automatización). Recorre el directorio en paralelo y genera tres reportes con la estructura de carpetas y los metadatos de cada archivo.
+File Reporter es una herramienta escrita en Rust con **interfaz gráfica** (para uso diario) y **línea de comandos** (para scripts y automatización). Recorre el directorio en paralelo y genera hasta tres reportes con la estructura de carpetas y los metadatos de cada archivo.
 
 ```text
 $ file-reporter C:\Demo\Proyecto
@@ -82,7 +82,7 @@ C:\Demo\Proyecto
 - 🖱️ Arrastra y suelta una carpeta sobre la ventana, o usa "Examinar…".
 - ✅ Valida las rutas mientras escribes e indica dónde se guardarán los reportes.
 - 📈 Contador en vivo y tiempo transcurrido; **cancela** en cualquier momento con el botón o con Esc.
-- 📊 Resumen final con archivos, tamaño total y tiempo; abre o copia la ruta de cada reporte.
+- 📊 Resultado en una ventana propia: archivos, tamaño total, tiempo y tipos de archivo; abre o copia la ruta de cada reporte.
 - 🔔 Si la ventana está en segundo plano, parpadea en la barra de tareas al terminar.
 - ⚠️ Pide confirmación antes de sobrescribir reportes anteriores.
 - ♻️ Recuerda rutas y opciones entre sesiones.
@@ -97,7 +97,7 @@ C:\Demo\Proyecto
 - [Rust](https://rustup.rs/) 1.95 o superior (toolchain estable).
 - **Solo en Linux:** dependencias del sistema para la GUI y los diálogos nativos:
   ```bash
-  sudo apt install libgtk-3-dev libxkbcommon-dev
+  sudo apt install libgtk-3-dev libxkbcommon-dev libwayland-dev
   ```
 
 ### Compilar desde el código fuente
@@ -109,8 +109,6 @@ cargo build --release
 ```
 
 El ejecutable queda en `target/release/file-reporter` (`file-reporter.exe` en Windows).
-
-Para probar cambios, `cargo run --profile fast` es mucho más rápido de recompilar que `--release`: optimiza casi igual pero sin LTO.
 
 > Probado principalmente en **Windows**; también compila en Linux y macOS.
 
@@ -310,15 +308,15 @@ src/
 │   ├── mod.rs       # Arranque, estado de la app y paneles fijos
 │   ├── form.rs      # Formulario y botones
 │   ├── run.rs       # Estado de la corrida e hilo de escaneo
-│   ├── results.rs   # Progreso y resultado
+│   ├── results.rs   # Progreso y ventana de resultado
 │   ├── dialogs.rs   # Diálogo de sobrescritura y arrastrar y soltar
 │   └── …            # widgets, paleta de colores, utilidades
 ├── runner.rs        # Flujo común: escanear → escribir reportes
 ├── scanner.rs       # Recorrido paralelo del directorio
-├── models.rs        # Node (árbol) y FileRecord (fila del CSV)
+├── models.rs        # Node (árbol), FileRecord (fila del CSV) y ExtStat (tipos)
 └── reporters/
     ├── csv.rs       # CSV para Excel (BOM + ;)
-    ├── markdown.rs  # Árbol estilo tree
+    ├── markdown.rs  # Árbol estilo tree y tabla de tipos
     └── json.rs      # JSON con formato legible
 ```
 
@@ -355,9 +353,12 @@ src/
 cargo test                          # tests
 cargo fmt --check                   # formato
 cargo clippy --all-targets -- -D warnings   # lint
+cargo run --profile fast            # probar la app: recompila en segundos (sin LTO)
 ```
 
-Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)) y cubren escaneo, filtros, modo solo carpetas, cancelación, los tres formatos de salida y la protección del CSV. En Windows también crean *junctions* para probar el manejo de enlaces sin necesidad de permisos de administrador.
+`--release` activa LTO, que da el ejecutable más rápido pero tarda minutos en recompilar; el perfil `fast` optimiza casi igual y es el indicado mientras se desarrolla.
+
+Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)) y cubren escaneo, filtros, exclusión de carpetas, modo solo carpetas, cancelación, estadísticas por tipo, los tres formatos de salida y la protección del CSV. En Windows también crean *junctions* para probar el manejo de enlaces sin necesidad de permisos de administrador.
 
 Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu.
 
@@ -365,9 +366,12 @@ Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.githu
 
 ## 🧭 Hoja de ruta
 
-- [ ] Vista previa del árbol antes de exportar.
-- [ ] Selector manual de tema claro/oscuro.
-- [ ] Binarios precompilados en *Releases* e instalador `.msi`.
+- [ ] Selector manual de tema claro/oscuro ([#11](https://github.com/dbarretol/file-reporter/issues/11)).
+- [ ] Icono propio para el ejecutable y la ventana ([#6](https://github.com/dbarretol/file-reporter/issues/6)).
+- [ ] Binarios precompilados en *Releases* e instalador `.msi` ([#15](https://github.com/dbarretol/file-reporter/issues/15)).
+- [ ] Barra de progreso en la línea de comandos ([#7](https://github.com/dbarretol/file-reporter/issues/7)).
+- [ ] Registro de las rutas omitidas con `tracing` ([#8](https://github.com/dbarretol/file-reporter/issues/8)).
+- [ ] Vista previa del árbol antes de exportar ([#13](https://github.com/dbarretol/file-reporter/issues/13)).
 
 ---
 
