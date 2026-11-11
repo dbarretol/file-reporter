@@ -87,7 +87,7 @@ C:\Demo\Proyecto
 
 ### Requisitos
 
-- [Rust](https://rustup.rs/) (toolchain estable).
+- [Rust](https://rustup.rs/) 1.95 o superior (toolchain estable).
 - **Solo en Linux:** dependencias del sistema para la GUI y los diálogos nativos:
   ```bash
   sudo apt install libgtk-3-dev libxkbcommon-dev
@@ -315,8 +315,6 @@ src/
 [`chrono`](https://crates.io/crates/chrono) ·
 [`anyhow`](https://crates.io/crates/anyhow)
 
-> `egui`/`eframe` están fijados en la versión `0.30` a propósito: las siguientes traen cambios de API que requieren una migración aparte (ver el comentario en `Cargo.toml`).
-
 ---
 
 ## 🧪 Desarrollo
@@ -339,7 +337,6 @@ Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.githu
 - [ ] Vista previa del árbol antes de exportar.
 - [ ] Selector manual de tema claro/oscuro.
 - [ ] Binarios precompilados en *Releases* e instalador `.msi`.
-- [ ] Migración a egui/eframe 0.35+.
 
 ---
 
