@@ -151,7 +151,7 @@ En Windows (PowerShell):
 | Opción | Descripción |
 |---|---|
 | `<PATH>` | Carpeta a escanear **(obligatorio)** |
-| `-e`, `--ext` | Extensiones a incluir. Sin esta opción se incluyen todas |
+| `-e`, `--ext` | Extensiones a incluir, separadas por coma, punto y coma o espacio (`"pdf, .DOCX"` vale). Sin esta opción se incluyen todas |
 | `-o`, `--output` | Carpeta de salida (por defecto: la carpeta escaneada) |
 | `-d`, `--dirs-only` | Solo estructura de carpetas. No se puede combinar con `-e` |
 | `-h`, `--help` / `-V`, `--version` | Ayuda / versión |
