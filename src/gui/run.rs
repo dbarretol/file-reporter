@@ -116,6 +116,7 @@ impl App {
             output,
             extensions,
             dirs_only: self.dirs_only,
+            exclude_dirs: runner::parse_dir_names([self.exclude_dirs.as_str()]),
             formats: self.selected_formats(),
         }
     }

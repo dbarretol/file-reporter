@@ -143,7 +143,7 @@ impl App {
                 .on_disabled_hover_text("Sin efecto en modo solo carpetas.")
                 .on_hover_text(
                     "Ej.: pdf, docx. Vacío = todas.\n\
-                     Cuenta lo que va tras el último punto: \"foo.tar.gz\" → gz.",
+                     Cuenta lo que va tras el último punto: \"foo.tar.gz\" es gz.",
                 );
 
                 // Sugerencias rápidas: cada una se suma a lo escrito (o se
@@ -169,6 +169,50 @@ impl App {
                         {
                             self.extensions = toggle_preset(&self.extensions, preset);
                         }
+                    }
+                });
+
+                ui.add_space(8.0);
+
+                // Carpetas a omitir por nombre
+                ui.label(
+                    egui::RichText::new("🚫  Carpetas a omitir (separadas por coma)").size(12.0),
+                );
+                ui.add_enabled(
+                    enabled,
+                    egui::TextEdit::singleline(&mut self.exclude_dirs)
+                        .hint_text(".git, node_modules  (vacío = ninguna)")
+                        .desired_width(ui.available_width().max(120.0)),
+                )
+                .on_hover_text(
+                    "Nombres de carpeta, no rutas: se omiten en cualquier\n\
+                     nivel, con todo su contenido.",
+                );
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new("Sugerencias:")
+                            .color(palette.muted)
+                            .size(11.0),
+                    );
+                    let common = runner::COMMON_EXCLUDED_DIRS.join(", ");
+                    let active = names_active(&self.exclude_dirs, &common, dir_list);
+                    if ui
+                        .add_enabled(
+                            enabled,
+                            egui::Button::new(
+                                egui::RichText::new("Carpetas de proyectos").size(11.0),
+                            )
+                            .small()
+                            .selected(active),
+                        )
+                        .on_hover_text(format!(
+                            "{}: {common}",
+                            if active { "Quitar" } else { "Añadir" }
+                        ))
+                        .clicked()
+                    {
+                        self.exclude_dirs = toggle_names(&self.exclude_dirs, &common, dir_list);
                     }
                 });
 
@@ -262,6 +306,7 @@ impl App {
                 && (!self.input_path.is_empty()
                     || !self.output_path.is_empty()
                     || !self.extensions.is_empty()
+                    || !self.exclude_dirs.is_empty()
                     || self.dirs_only
                     || self.formats != ALL_FORMATS);
             if ui
@@ -281,6 +326,7 @@ impl App {
         self.input_path.clear();
         self.output_path.clear();
         self.extensions.clear();
+        self.exclude_dirs.clear();
         self.formats = ALL_FORMATS;
         self.dirs_only = false;
         self.state = RunState::Idle;
@@ -291,19 +337,28 @@ impl App {
     }
 }
 
-/// `true` si todas las extensiones de `preset` ya están en el campo.
-fn preset_is_active(field: &str, preset: &str) -> bool {
-    let current = runner::parse_extensions([field]);
-    runner::parse_extensions([preset])
-        .iter()
-        .all(|e| current.contains(e))
+/// Lista de extensiones de un campo (ver `runner::parse_extensions`).
+fn ext_list(field: &str) -> Vec<String> {
+    runner::parse_extensions([field])
 }
 
-/// Pulsar una sugerencia: si ya estaba entera, quita sus extensiones; si no,
-/// añade las que falten al final, conservando lo que el usuario escribió.
-fn toggle_preset(field: &str, preset: &str) -> String {
-    let mut current = runner::parse_extensions([field]);
-    let preset = runner::parse_extensions([preset]);
+/// Lista de nombres de carpeta de un campo (ver `runner::parse_dir_names`).
+fn dir_list(field: &str) -> Vec<String> {
+    runner::parse_dir_names([field])
+}
+
+/// `true` si todo lo de `preset` ya está en el campo, leídos ambos con
+/// `parse`.
+fn names_active(field: &str, preset: &str, parse: fn(&str) -> Vec<String>) -> bool {
+    let current = parse(field);
+    parse(preset).iter().all(|e| current.contains(e))
+}
+
+/// Pulsar una sugerencia: si ya estaba entera, la quita; si no, añade lo que
+/// falte al final, conservando lo que el usuario escribió.
+fn toggle_names(field: &str, preset: &str, parse: fn(&str) -> Vec<String>) -> String {
+    let mut current = parse(field);
+    let preset = parse(preset);
     if preset.iter().all(|e| current.contains(e)) {
         current.retain(|e| !preset.contains(e));
     } else {
@@ -314,6 +369,14 @@ fn toggle_preset(field: &str, preset: &str) -> String {
         }
     }
     current.join(", ")
+}
+
+fn preset_is_active(field: &str, preset: &str) -> bool {
+    names_active(field, preset, ext_list)
+}
+
+fn toggle_preset(field: &str, preset: &str) -> String {
+    toggle_names(field, preset, ext_list)
 }
 
 #[cfg(test)]
@@ -333,5 +396,21 @@ mod tests {
         assert!(preset_is_active("txt, pdf, docx", "pdf, docx"));
         assert_eq!(toggle_preset("txt, pdf, docx", "pdf, docx"), "txt");
         assert!(!preset_is_active("pdf", "pdf, docx"));
+    }
+
+    #[test]
+    fn dir_presets_keep_names_with_spaces_and_dots() {
+        // Los nombres de carpeta no se separan por espacios ni pierden el
+        // punto inicial, a diferencia de las extensiones.
+        let common = ".git, node_modules";
+        assert_eq!(
+            toggle_names("Mis fotos", common, dir_list),
+            "Mis fotos, .git, node_modules"
+        );
+        assert!(names_active("node_modules, .git", common, dir_list));
+        assert_eq!(
+            toggle_names("Mis fotos, .git, node_modules", common, dir_list),
+            "Mis fotos"
+        );
     }
 }

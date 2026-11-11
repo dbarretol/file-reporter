@@ -81,6 +81,8 @@ struct App {
     input_path: String,
     output_path: String,
     extensions: String,
+    /// Nombres de carpeta a omitir, tal como los escribió el usuario.
+    exclude_dirs: String,
     dirs_only: bool,
     /// Casillas CSV / Markdown / JSON, en el orden de `ReportFormat::ALL`.
     formats: [bool; 3],
@@ -123,6 +125,7 @@ struct PersistedState {
     input_path: String,
     output_path: String,
     extensions: String,
+    exclude_dirs: String,
     dirs_only: bool,
     /// Formatos marcados, en el orden de `ReportFormat::ALL`. Por defecto
     /// (también al cargar un estado de una versión que no lo guardaba), los
@@ -136,6 +139,7 @@ impl Default for PersistedState {
             input_path: String::new(),
             output_path: String::new(),
             extensions: String::new(),
+            exclude_dirs: String::new(),
             dirs_only: false,
             formats: ALL_FORMATS,
         }
@@ -152,6 +156,7 @@ impl App {
             input_path: state.input_path,
             output_path: state.output_path,
             extensions: state.extensions,
+            exclude_dirs: state.exclude_dirs,
             dirs_only: state.dirs_only,
             formats: state.formats,
             ..App::default()
@@ -353,6 +358,7 @@ impl eframe::App for App {
             input_path: self.input_path.clone(),
             output_path: self.output_path.clone(),
             extensions: self.extensions.clone(),
+            exclude_dirs: self.exclude_dirs.clone(),
             dirs_only: self.dirs_only,
             formats: self.formats,
         };
