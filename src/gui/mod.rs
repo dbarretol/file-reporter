@@ -1,0 +1,378 @@
+//! Interfaz gráfica (egui/eframe).
+//!
+//! - `mod.rs`: arranque, estado de la app, bucle por frame y paneles fijos.
+//! - `form`: formulario y botones de acción.
+//! - `run`: estado de la corrida y el hilo que escanea.
+//! - `results`: paneles de progreso y de resultado.
+//! - `dialogs`: diálogo de sobrescritura y arrastrar y soltar.
+//! - `widgets`, `palette`, `util`: piezas compartidas.
+
+mod dialogs;
+mod form;
+mod palette;
+mod results;
+mod run;
+mod util;
+mod widgets;
+
+use crate::runner::ReportFormat;
+use anyhow::Result;
+use eframe::egui;
+use form::PathCheck;
+use palette::Palette;
+use run::{PendingRun, RunState};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+pub fn launch() -> Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([980.0, 640.0]) // ancho suficiente para MAX_CONTENT_WIDTH (900) + márgenes
+            .with_min_inner_size([720.0, 500.0]) // mínimo cómodo
+            .with_title("File Reporter"),
+        centered: true, // abre centrada en la pantalla (cuando el OS lo permite)
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "File Reporter",
+        options,
+        Box::new(|cc| {
+            // Estilo global más amigable
+            setup_custom_style(&cc.egui_ctx);
+            Ok(Box::new(App::new(cc)))
+        }),
+    )
+    .map_err(|e| anyhow::anyhow!("Error iniciando GUI: {e}"))
+}
+
+/// Ajustes visuales globales (espaciado, tipografía, etc.).
+fn setup_custom_style(ctx: &egui::Context) {
+    ctx.all_styles_mut(|style| {
+        // Espaciado más generoso
+        style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+        style.spacing.button_padding = egui::vec2(12.0, 6.0);
+        style.spacing.interact_size.y = 28.0;
+
+        // Bordes ligeramente más redondeados
+        style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(4);
+        style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(4);
+        style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(4);
+        style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(4);
+    });
+}
+
+/// Tiempo que el botón "Copiar ruta" muestra "✔ Copiada".
+const COPIED_TTL: Duration = Duration::from_secs(2);
+
+/// Tiempo que un `ui_error` puntual permanece visible en la barra de estado
+/// antes de desaparecer solo, si no lo reemplaza antes una acción nueva.
+const UI_ERROR_TTL: Duration = Duration::from_secs(5);
+
+/// Todos los formatos marcados (valor por defecto y al pulsar "Limpiar").
+const ALL_FORMATS: [bool; 3] = [true; 3];
+
+const PERSIST_KEY: &str = eframe::APP_KEY;
+
+#[derive(Default)]
+struct App {
+    // Formulario
+    input_path: String,
+    output_path: String,
+    extensions: String,
+    dirs_only: bool,
+    /// Casillas CSV / Markdown / JSON, en el orden de `ReportFormat::ALL`.
+    formats: [bool; 3],
+
+    /// Validación en vivo de las rutas tecleadas (ver `PathCheck`).
+    input_check: PathCheck,
+    output_check: PathCheck,
+
+    /// Corrida en curso o resultado de la última.
+    state: RunState,
+    /// Corrida a la espera de confirmar la sobrescritura. Aparte de `state`
+    /// porque el diálogo se abre encima del resultado anterior, que sigue
+    /// a la vista.
+    pending_confirm: Option<PendingRun>,
+
+    /// Error de una acción puntual de UI (p. ej. "Abrir carpeta" falló al
+    /// lanzar el explorador) y cuándo se produjo. Se muestra en la barra de
+    /// estado sin tocar `state`, que es el resultado del escaneo en sí, y
+    /// expira solo (ver `UI_ERROR_TTL`).
+    ui_error: Option<(String, Instant)>,
+
+    /// Al llegar el resultado de una corrida, desplazar la vista hasta el
+    /// panel de resultados una sola vez (puede quedar fuera de la ventana).
+    scroll_to_results: bool,
+
+    /// Última ruta copiada con "Copiar ruta" y cuándo, para confirmar la
+    /// copia en el botón durante `COPIED_TTL`.
+    copied: Option<(PathBuf, Instant)>,
+}
+
+/// Único subconjunto de `App` que se persiste entre sesiones (`eframe`
+/// "persistence"): las rutas y extensiones tecleadas, no el estado de una
+/// corrida en curso.
+/// `#[serde(default)]`: un estado guardado por una versión anterior (sin
+/// algún campo nuevo, p. ej. `dirs_only`) sigue cargándose con el valor por
+/// defecto para ese campo, en vez de fallar y perder todo lo recordado.
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
+struct PersistedState {
+    input_path: String,
+    output_path: String,
+    extensions: String,
+    dirs_only: bool,
+    /// Formatos marcados, en el orden de `ReportFormat::ALL`. Por defecto
+    /// (también al cargar un estado de una versión que no lo guardaba), los
+    /// tres.
+    formats: [bool; 3],
+}
+
+impl Default for PersistedState {
+    fn default() -> Self {
+        Self {
+            input_path: String::new(),
+            output_path: String::new(),
+            extensions: String::new(),
+            dirs_only: false,
+            formats: ALL_FORMATS,
+        }
+    }
+}
+
+impl App {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let state = cc
+            .storage
+            .and_then(|s| eframe::get_value::<PersistedState>(s, PERSIST_KEY))
+            .unwrap_or_default();
+        App {
+            input_path: state.input_path,
+            output_path: state.output_path,
+            extensions: state.extensions,
+            dirs_only: state.dirs_only,
+            formats: state.formats,
+            ..App::default()
+        }
+    }
+
+    /// Formatos marcados en el formulario.
+    fn selected_formats(&self) -> Vec<ReportFormat> {
+        ReportFormat::ALL
+            .into_iter()
+            .zip(self.formats)
+            .filter_map(|(f, on)| on.then_some(f))
+            .collect()
+    }
+
+    /// Establece un `ui_error` puntual y arranca su temporizador de
+    /// auto-expiración (ver `UI_ERROR_TTL`).
+    fn set_ui_error(&mut self, msg: impl Into<String>) {
+        self.ui_error = Some((msg.into(), Instant::now()));
+    }
+
+    /// Limpia el `ui_error` puntual, si hay uno.
+    fn clear_ui_error(&mut self) {
+        self.ui_error = None;
+    }
+
+    /// Quita los mensajes temporales que ya expiraron y pide un repintado
+    /// para cuando expiren los que quedan.
+    fn expire_messages(&mut self, ctx: &egui::Context) {
+        if let Some((_, at)) = &self.copied {
+            match COPIED_TTL.checked_sub(at.elapsed()) {
+                Some(left) if !left.is_zero() => ctx.request_repaint_after(left),
+                _ => self.copied = None,
+            }
+        }
+        if let Some((_, at)) = &self.ui_error {
+            match UI_ERROR_TTL.checked_sub(at.elapsed()) {
+                Some(left) if !left.is_zero() => ctx.request_repaint_after(left),
+                _ => self.clear_ui_error(),
+            }
+        }
+    }
+
+    /// Atajos de teclado: Enter lanza "Generar reportes" (igual que el
+    /// botón, si el formulario es válido) y Esc cancela un escaneo en curso.
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        let (enter, esc) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::Enter),
+                i.key_pressed(egui::Key::Escape),
+            )
+        });
+        if enter && self.can_run() {
+            self.request_run();
+        }
+        if esc && self.is_running() {
+            self.request_cancel();
+        }
+    }
+
+    /// Barra superior con el título.
+    fn render_header(&self, ui: &mut egui::Ui) {
+        egui::Panel::top("header")
+            .exact_size(56.0)
+            .show(ui, |ui| {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(16.0);
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("📋  File Reporter")
+                                .size(20.0)
+                                .strong(),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Genera reportes (CSV, Markdown, JSON) de la estructura de un directorio",
+                            )
+                            .color(Palette::of(ui).muted)
+                            .size(12.0),
+                        );
+                    });
+                });
+            });
+    }
+
+    /// Barra de estado inferior.
+    fn render_statusbar(&self, ui: &mut egui::Ui) {
+        egui::Panel::bottom("statusbar")
+            .exact_size(24.0)
+            .show(ui, |ui| {
+                let palette = Palette::of(ui);
+                ui.horizontal(|ui| {
+                    ui.add_space(12.0);
+                    // Un error de una acción puntual (p. ej. "Abrir carpeta"
+                    // falló) tiene prioridad sobre el estado general.
+                    let (icon, text, color) = if let Some((err, _)) = &self.ui_error {
+                        ("⚠", err.as_str(), palette.error)
+                    } else {
+                        // ⚪/⚫ y no 🟢 & co.: la fuente de emoji de egui es
+                        // monocroma y no trae todos los círculos de color (🟢
+                        // salía como un cuadro). El color lo da la etiqueta.
+                        match &self.state {
+                            RunState::Idle => ("⚪", "Listo", palette.muted),
+                            // La fase real, no un genérico "Procesando…".
+                            RunState::Running(run) if run.writing() => {
+                                ("⚫", "Generando reportes…", palette.accent)
+                            }
+                            RunState::Running(_) => ("⚫", "Escaneando…", palette.accent),
+                            RunState::Done { .. } => ("⚫", "Completado", palette.success),
+                            RunState::Failed { .. } => ("⚫", "Error", palette.error),
+                            RunState::Cancelled { .. } => ("⏹", "Cancelado", palette.warning),
+                        }
+                    };
+                    ui.colored_label(color, icon);
+                    ui.colored_label(color, text);
+                });
+            });
+    }
+
+    /// Panel central: formulario, acciones, progreso y resultado.
+    fn render_main(&mut self, ui: &mut egui::Ui) {
+        egui::CentralPanel::default_margins().show(ui, |ui| {
+            // Sin auto_shrink el ancho del área es siempre el del panel, no el
+            // del contenido del frame anterior.
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    // Centrar el contenido y limitar su ancho máximo en pantallas grandes.
+                    const MAX_CONTENT_WIDTH: f32 = 900.0;
+                    const SIDE_PADDING: f32 = 16.0;
+
+                    let available = ui.available_width();
+
+                    // El contenido NUNCA debe exceder lo realmente disponible.
+                    // - En pantallas grandes: usa MAX_CONTENT_WIDTH y se centra.
+                    // - En pantallas pequeñas: usa todo el ancho menos el padding mínimo.
+                    let content_width = if available > MAX_CONTENT_WIDTH + 2.0 * SIDE_PADDING {
+                        MAX_CONTENT_WIDTH
+                    } else {
+                        (available - 2.0 * SIDE_PADDING).max(200.0)
+                    };
+
+                    let side_margin = ((available - content_width) / 2.0).max(SIDE_PADDING);
+
+                    // Margen lateral con `add_space` y no con `Frame::inner_margin`:
+                    // `Margin` usa `i8` y no admite márgenes de más de 127 px.
+                    let item_spacing = ui.spacing().item_spacing;
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        ui.add_space(side_margin);
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing = item_spacing;
+                            // Forzamos a TODOS los hijos a respetar el ancho máximo.
+                            ui.set_max_width(content_width);
+
+                            ui.add_space(12.0);
+                            self.render_form(ui);
+                            ui.add_space(8.0);
+                            self.render_actions(ui);
+                            ui.add_space(8.0);
+                            self.render_progress(ui);
+                            ui.add_space(8.0);
+                            self.render_results(ui);
+                            ui.add_space(12.0);
+                        });
+                    });
+                });
+        });
+    }
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = &ui.ctx().clone();
+        if self.is_running() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
+
+        self.input_check.refresh(&self.input_path);
+        self.output_check.refresh(&self.output_path);
+        self.expire_messages(ctx);
+        self.poll_worker(ctx);
+
+        self.handle_dropped_files(ctx);
+        self.render_drop_hint(ctx);
+        self.handle_shortcuts(ctx);
+        self.render_overwrite_confirm(ctx);
+
+        self.render_header(ui);
+        self.render_statusbar(ui);
+        self.render_main(ui);
+    }
+
+    /// Persiste las rutas y extensiones tecleadas (no el estado de una
+    /// corrida en curso) para restaurarlas en la próxima sesión.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        let state = PersistedState {
+            input_path: self.input_path.clone(),
+            output_path: self.output_path.clone(),
+            extensions: self.extensions.clone(),
+            dirs_only: self.dirs_only,
+            formats: self.formats,
+        };
+        eframe::set_value(storage, PERSIST_KEY, &state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persisted_state_from_older_version_keeps_all_formats() {
+        // Un estado guardado antes de existir `formats` no debe dejar la
+        // GUI sin ningún formato marcado.
+        // (eframe lo guarda en RON; `#[serde(default)]` actúa igual en
+        // cualquier formato de serde, así que basta con JSON.)
+        let old = r#"{"input_path":"C:\\x","output_path":"","extensions":"","dirs_only":false}"#;
+        let state: PersistedState = serde_json::from_str(old).unwrap();
+        assert_eq!(state.formats, ALL_FORMATS);
+        assert_eq!(state.input_path, "C:\\x");
+    }
+}
