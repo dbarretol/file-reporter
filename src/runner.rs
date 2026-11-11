@@ -137,9 +137,9 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         bail!("Escaneo cancelado por el usuario");
     }
 
-    // Fase 3: aplanar a registros para CSV (operación en memoria, sin I/O)
-    let mut records = Vec::new();
-    scanner::flatten_to_records(&tree, &mut records);
+    // Totales del árbol (operación en memoria, sin I/O). Las filas del CSV
+    // se generan al escribirlo, sin una lista intermedia.
+    let (files_count, total_bytes) = scanner::file_totals(&tree);
     let dirs_count = scanner::count_dirs(&tree);
 
     // Asegurar que el contador refleje la realidad final (en modo solo
@@ -148,7 +148,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         let final_count = if cfg.dirs_only {
             dirs_count
         } else {
-            records.len()
+            files_count
         };
         p.done.store(final_count, Ordering::Relaxed);
     }
@@ -174,7 +174,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
             )
         })?;
 
-        reporters::csv::write_csv(&records, &csv_path)?;
+        reporters::csv::write_csv(&tree, &csv_path)?;
         reporters::markdown::write_markdown(&tree, &md_path)?;
         reporters::json::write_json(&tree, &json_path)?;
         Ok(())
@@ -191,8 +191,8 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         csv_path,
         md_path,
         json_path,
-        files_count: records.len(),
-        total_bytes: records.iter().map(|r| r.size_bytes).sum(),
+        files_count,
+        total_bytes,
         dirs_count,
         dirs_only: cfg.dirs_only,
         skipped_count,
