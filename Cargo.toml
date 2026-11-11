@@ -40,3 +40,12 @@ lto = true
 # No usar panic = "abort": rompería el catch_unwind del worker de la GUI
 # (src/gui/run.rs, start_run) que evita que un panic interno tumbe la app.
 strip = true
+# Para probar la app durante el desarrollo: casi tan rápida como `release`
+# pero sin LTO y con compilación incremental, así que recompila en segundos
+# en vez de minutos. Uso: `cargo run --profile fast` (sale en target/fast/).
+[profile.fast]
+inherits = "release"
+lto = false
+strip = false
+codegen-units = 256
+incremental = true
