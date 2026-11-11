@@ -16,7 +16,7 @@ $ file-reporter C:\Demo\Proyecto
    📄 Markdown: C:\Demo\Proyecto\report.md
    📄 JSON:     C:\Demo\Proyecto\report.json
 
-📊 Archivos procesados: 4
+📊 Archivos procesados: 4 · 1.2 MB
 ⏱️  Tiempo: 1.98ms
 ```
 
@@ -73,7 +73,10 @@ C:\Demo\Proyecto
 
 **Interfaz gráfica**
 - 🖱️ Arrastra y suelta una carpeta sobre la ventana, o usa "Examinar…".
-- 📈 Barra de progreso con tiempo estimado y botón para **cancelar** en cualquier momento.
+- ✅ Valida las rutas mientras escribes e indica dónde se guardarán los reportes.
+- 📈 Contador en vivo y tiempo transcurrido; **cancela** en cualquier momento con el botón o con Esc.
+- 📊 Resumen final con archivos, tamaño total y tiempo; abre o copia la ruta de cada reporte.
+- 🔔 Si la ventana está en segundo plano, parpadea en la barra de tareas al terminar.
 - ⚠️ Pide confirmación antes de sobrescribir reportes anteriores.
 - ♻️ Recuerda rutas y opciones entre sesiones.
 - 🎨 Tema claro u oscuro según el sistema operativo.
@@ -122,7 +125,7 @@ El mismo ejecutable funciona en dos modos:
 1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…" o arrástrala a la ventana.
 2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
 3. *(Opcional)* Escribe las **extensiones** a incluir o usa una de las sugerencias.
-4. *(Opcional)* Marca **Solo carpeta (omitir archivos)** para obtener solo la jerarquía de directorios.
+4. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
 5. Pulsa **▶ Generar reportes** (o Enter).
 
 ### ⌨️ Línea de comandos
@@ -327,7 +330,6 @@ Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.githu
 ## 🧭 Hoja de ruta
 
 - [ ] Lista configurable de carpetas a excluir (`.git`, `node_modules`, …).
-- [ ] Tamaño total en el resumen final.
 - [ ] Vista previa del árbol antes de exportar.
 - [ ] Selector manual de tema claro/oscuro.
 - [ ] Binarios precompilados en *Releases* e instalador `.msi`.

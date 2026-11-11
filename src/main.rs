@@ -72,7 +72,11 @@ fn main() -> Result<()> {
     if summary.dirs_only {
         println!("\n📊 Carpetas procesadas: {}", summary.dirs_count);
     } else {
-        println!("\n📊 Archivos procesados: {}", summary.files_count);
+        println!(
+            "\n📊 Archivos procesados: {} · {}",
+            summary.files_count,
+            runner::format_size(summary.total_bytes)
+        );
     }
     if summary.skipped_count > 0 {
         println!(
