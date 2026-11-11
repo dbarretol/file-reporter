@@ -111,9 +111,10 @@ struct App {
     /// expira solo (ver `UI_ERROR_TTL`).
     ui_error: Option<(String, Instant)>,
 
-    /// Al llegar el resultado de una corrida, desplazar la vista hasta el
-    /// panel de resultados una sola vez (puede quedar fuera de la ventana).
-    scroll_to_results: bool,
+    /// Si el modal con el resultado de la última corrida está abierto. Se
+    /// abre al terminar cada corrida; al cerrarlo queda un resumen de una
+    /// línea con un botón para volver a abrirlo.
+    results_open: bool,
 
     /// Última ruta copiada con "Copiar ruta" y cuándo, para confirmar la
     /// copia en el botón durante `COPIED_TTL`.
@@ -209,6 +210,8 @@ impl App {
 
     /// Atajos de teclado: Enter lanza "Generar reportes" (igual que el
     /// botón, si el formulario es válido) y Esc cancela un escaneo en curso.
+    /// Con el modal de resultado abierto, Enter lo cierra en vez de lanzar
+    /// otra corrida por detrás (Esc lo cierra el propio modal).
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         let (enter, esc) = ctx.input(|i| {
             (
@@ -216,7 +219,11 @@ impl App {
                 i.key_pressed(egui::Key::Escape),
             )
         });
-        if enter && self.can_run() {
+        if self.results_visible() {
+            if enter {
+                self.results_open = false;
+            }
+        } else if enter && self.can_run() {
             self.request_run();
         }
         if esc && self.is_running() {
@@ -326,8 +333,6 @@ impl App {
                             self.render_actions(ui);
                             ui.add_space(8.0);
                             self.render_progress(ui);
-                            ui.add_space(8.0);
-                            self.render_results(ui);
                             ui.add_space(12.0);
                         });
                     });
@@ -352,6 +357,7 @@ impl eframe::App for App {
         self.render_drop_hint(ctx);
         self.handle_shortcuts(ctx);
         self.render_overwrite_confirm(ctx);
+        self.render_results_modal(ctx);
 
         self.render_header(ui);
         self.render_statusbar(ui);

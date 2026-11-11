@@ -239,7 +239,10 @@ impl App {
             ),
         };
         self.state = next;
-        self.scroll_to_results = true;
+        // La corrida pudo crear la carpeta de salida: que el aviso "se
+        // creará al generar los reportes" no quede desactualizado.
+        self.output_check.invalidate();
+        self.results_open = true;
         let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
         if let (Some(kind), false) = (attention, focused) {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(kind));
@@ -301,7 +304,7 @@ mod tests {
         let (mut app, _tx, _) = running_app(false);
         app.poll_worker(&egui::Context::default());
         assert!(app.is_running());
-        assert!(!app.scroll_to_results);
+        assert!(!app.results_open);
     }
 
     #[test]
@@ -310,7 +313,19 @@ mod tests {
         tx.send(WorkerMsg::Failed("sin permiso".into())).unwrap();
         app.poll_worker(&egui::Context::default());
         assert!(matches!(&app.state, RunState::Failed { error } if error == "sin permiso"));
-        assert!(app.scroll_to_results);
+        assert!(app.results_open);
+        assert!(app.results_visible());
+    }
+
+    #[test]
+    fn results_modal_is_hidden_without_a_finished_run() {
+        // `results_open` solo no basta: sin resultado (Idle o en curso) no
+        // hay modal, y Enter vuelve a lanzar corridas.
+        let (mut app, _tx, _) = running_app(false);
+        app.results_open = true;
+        assert!(!app.results_visible());
+        app.state = RunState::Idle;
+        assert!(!app.results_visible());
     }
 
     #[test]

@@ -84,6 +84,19 @@ fn main() -> Result<()> {
             summary.files_count,
             runner::format_size(summary.total_bytes)
         );
+        let rows = runner::top_types(&summary.ext_stats, 5);
+        if !rows.is_empty() {
+            println!("\n🗂️  Tipos de archivo (por tamaño):");
+            for r in rows {
+                println!(
+                    "   {:<18} {:>7} arch. · {:>9} · {:>7}",
+                    r.label,
+                    r.count,
+                    runner::format_size(r.bytes),
+                    runner::format_percent(r.bytes, summary.total_bytes)
+                );
+            }
+        }
     }
     if summary.skipped_count > 0 {
         println!(

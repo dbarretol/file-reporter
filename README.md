@@ -16,7 +16,12 @@ $ file-reporter C:\Demo\Proyecto
    📄 Markdown: C:\Demo\Proyecto\report.md
    📄 JSON:     C:\Demo\Proyecto\report.json
 
-📊 Archivos procesados: 4 · 1.2 MB
+📊 Archivos procesados: 4 · 1.3 MB
+
+🗂️  Tipos de archivo (por tamaño):
+   .pdf                     1 arch. ·    1.3 MB ·  99.4 %
+   .rs                      2 arch. ·    6.4 KB ·   0.5 %
+   .md                      1 arch. ·    1.8 KB ·   0.1 %
 ⏱️  Tiempo: 1.98ms
 ```
 
@@ -64,6 +69,7 @@ C:\Demo\Proyecto
 - 📅 Metadatos por archivo: nombre, extensión, tamaño (MB y bytes exactos), fechas de creación y modificación, y ruta.
 - 🎯 **Filtro por extensiones** (`pdf, docx, jpg…`).
 - 📂 **Modo solo carpetas:** genera únicamente la jerarquía de directorios, sin archivos.
+- 🗂️ **Resumen por tipo de archivo:** cantidad, tamaño y porcentaje de cada extensión, en la GUI, en la consola y en `report.md`.
 - 🚫 **Omite carpetas por nombre** en cualquier nivel (`.git`, `node_modules`, `target`…), sin llegar a leerlas.
 
 **Rendimiento y robustez**
@@ -104,6 +110,8 @@ cargo build --release
 
 El ejecutable queda en `target/release/file-reporter` (`file-reporter.exe` en Windows).
 
+Para probar cambios, `cargo run --profile fast` es mucho más rápido de recompilar que `--release`: optimiza casi igual pero sin LTO.
+
 > Probado principalmente en **Windows**; también compila en Linux y macOS.
 
 ---
@@ -129,7 +137,7 @@ El mismo ejecutable funciona en dos modos:
 4. *(Opcional)* Revisa las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas, o pulsa la sugerencia "Carpetas de proyectos" para quitarlas o volver a ponerlas.
 5. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
 6. *(Opcional)* Desmarca los **formatos** que no necesites (CSV, Markdown, JSON).
-7. Pulsa **▶ Generar reportes** (o Enter).
+7. Pulsa **▶ Generar reportes** (o Enter). Al terminar se abre una ventana con el resultado: los reportes (abrir o copiar su ruta), la carpeta de salida y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
 
 ### ⌨️ Línea de comandos
 
@@ -183,7 +191,7 @@ Cada ejecución crea en la carpeta de salida estos archivos (los tres por defect
 | Archivo | Contenido | Ideal para |
 |---|---|---|
 | `report.csv` | Una fila por archivo con todos sus metadatos | Excel, Pandas, hojas de cálculo |
-| `report.md` | Árbol de carpetas y archivos estilo `tree` | Documentación, READMEs |
+| `report.md` | Árbol de carpetas y archivos estilo `tree`, y tabla de tipos de archivo | Documentación, READMEs |
 | `report.json` | Árbol completo con metadatos | Scripts e integraciones |
 
 En **modo solo carpetas**, `report.md` y `report.json` contienen únicamente directorios y `report.csv` queda solo con la cabecera.
@@ -233,7 +241,17 @@ C:\Demo\Proyecto
 │   └── main.rs
 └── README.md
 ```
+
+## 📊 Tipos de archivo
+
+| Extensión | Archivos | Tamaño | % del tamaño |
+|---|--:|--:|--:|
+| .pdf | 1 | 1.3 MB | 99.4 % |
+| .rs | 2 | 6.4 KB | 0.5 % |
+| .md | 1 | 1.8 KB | 0.1 % |
 ````
+
+La tabla lista todas las extensiones, de mayor a menor tamaño total; no aparece en modo solo carpetas.
 
 </details>
 
