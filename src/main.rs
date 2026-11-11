@@ -19,7 +19,7 @@ use std::time::Instant;
 /// profundo (rutas largas de Windows con `\\?\`, hasta ~32 767 caracteres)
 /// podría, en teoría, agotarlo. 16 MB da margen amplio para ese caso extremo
 /// sin coste real (unos pocos hilos reservan memoria virtual, no física, por
-/// adelantado). Ver tarea 23 en tasks.md.
+/// adelantado).
 pub const SCAN_THREAD_STACK_SIZE: usize = 16 * 1024 * 1024;
 
 fn main() -> Result<()> {

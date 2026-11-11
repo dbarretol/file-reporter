@@ -150,7 +150,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     // de la función y dejarían `writing` en `true` para siempre. Hoy es
     // inofensivo porque la GUI gatea el spinner con `status == Running`,
     // pero es una trampa latente para cualquier uso futuro de la bandera
-    // que no tenga ese gate — ver tarea 36 en tasks.md).
+    // que no tenga ese gate).
     let write_result: Result<()> = (|| {
         std::fs::create_dir_all(&cfg.output).with_context(|| {
             format!(
@@ -294,7 +294,7 @@ mod tests {
         run(&cfg, Some(progress.clone())).unwrap();
 
         // Regresión: si `writing` se queda en `true` tras terminar, la GUI
-        // muestra un spinner "Generando reportes…" permanente (ver tarea 26).
+        // muestra un spinner "Generando reportes…" permanente.
         assert!(!progress.writing.load(Ordering::Relaxed));
     }
 
@@ -323,7 +323,7 @@ mod tests {
         assert!(result.is_err());
         // Regresión: antes del fix, un error durante la escritura de
         // reportes propagaba con `?` sin pasar por el reset de `writing`,
-        // dejándolo en `true` para siempre (ver tarea 36).
+        // dejándolo en `true` para siempre.
         assert!(!progress.writing.load(Ordering::Relaxed));
     }
 }
