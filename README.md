@@ -124,9 +124,10 @@ El mismo ejecutable funciona en dos modos:
 
 1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…" o arrástrala a la ventana.
 2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
-3. *(Opcional)* Escribe las **extensiones** a incluir o usa una de las sugerencias.
+3. *(Opcional)* Escribe las **extensiones** a incluir. Las sugerencias se suman a lo escrito; pulsarlas otra vez las quita.
 4. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
-5. Pulsa **▶ Generar reportes** (o Enter).
+5. *(Opcional)* Desmarca los **formatos** que no necesites (CSV, Markdown, JSON).
+6. Pulsa **▶ Generar reportes** (o Enter).
 
 ### ⌨️ Línea de comandos
 
@@ -143,6 +144,9 @@ file-reporter /ruta -o /ruta/reportes
 
 # Solo la estructura de carpetas
 file-reporter /ruta -d
+
+# Solo algunos formatos
+file-reporter /ruta -f csv,md
 ```
 
 En Windows (PowerShell):
@@ -157,6 +161,7 @@ En Windows (PowerShell):
 | `-e`, `--ext` | Extensiones a incluir, separadas por coma, punto y coma o espacio (`"pdf, .DOCX"` vale). Sin esta opción se incluyen todas |
 | `-o`, `--output` | Carpeta de salida (por defecto: la carpeta escaneada) |
 | `-d`, `--dirs-only` | Solo estructura de carpetas. No se puede combinar con `-e` |
+| `-f`, `--format` | Reportes a generar: `csv`, `md` (o `markdown`), `json`, separados por coma. Sin esta opción se generan los tres |
 | `-h`, `--help` / `-V`, `--version` | Ayuda / versión |
 
 > **Sobre las extensiones:** se usa lo que va tras el **último** punto del nombre. `foo.tar.gz` tiene extensión `gz`, no `tar.gz`. Los archivos sin punto (`LICENSE`, `Makefile`) no tienen extensión y quedan fuera de cualquier filtro.
@@ -165,7 +170,7 @@ En Windows (PowerShell):
 
 ## 📁 Reportes generados
 
-Cada ejecución crea tres archivos en la carpeta de salida:
+Cada ejecución crea en la carpeta de salida estos archivos (los tres por defecto, o los elegidos con `-f` o en la GUI):
 
 | Archivo | Contenido | Ideal para |
 |---|---|---|
