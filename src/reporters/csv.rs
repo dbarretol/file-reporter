@@ -91,7 +91,7 @@ mod tests {
         for name in ["=1+1.txt", "-informe.txt", "@evil.txt"] {
             std::fs::write(input.join(name), "x").unwrap();
         }
-        let tree = scanner::build_tree(&input, &[], false, None, &[], None, None).unwrap();
+        let tree = scanner::build_tree(&input, &scanner::ScanOptions::default()).unwrap();
 
         let output = dir.path().join("report.csv");
         write_csv(&tree, &output).unwrap();

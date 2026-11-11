@@ -25,6 +25,16 @@ pub struct Cli {
     #[arg(short = 'd', long = "dirs-only", conflicts_with = "extensions")]
     pub dirs_only: bool,
 
+    /// Carpetas a omitir por nombre, en cualquier nivel (ej: -x .git -x "mis fotos").
+    /// Admite varias separadas por coma.
+    #[arg(short = 'x', long = "exclude", value_name = "CARPETA")]
+    pub exclude: Vec<String>,
+
+    /// Omitir también las carpetas comunes de proyectos: .git, node_modules,
+    /// target, __pycache__, .venv, dist y build.
+    #[arg(long = "exclude-common")]
+    pub exclude_common: bool,
+
     /// Reportes a generar (ej: -f csv,md). Si no se pasa, se generan los tres.
     #[arg(short = 'f', long = "format", value_enum, value_delimiter = ',')]
     pub formats: Vec<ReportFormat>,
@@ -38,6 +48,23 @@ impl Cli {
         } else {
             self.formats.clone()
         }
+    }
+
+    /// Carpetas a omitir: las de `--exclude-common` (si se pidió) y las de
+    /// `--exclude`, con las mismas reglas que la GUI (ver
+    /// `runner::parse_dir_names`).
+    pub fn excluded_dirs(&self) -> Vec<String> {
+        let common = if self.exclude_common {
+            crate::runner::COMMON_EXCLUDED_DIRS.as_slice()
+        } else {
+            &[]
+        };
+        crate::runner::parse_dir_names(
+            common
+                .iter()
+                .copied()
+                .chain(self.exclude.iter().map(String::as_str)),
+        )
     }
 
     /// Normaliza las extensiones con las mismas reglas que la GUI (ver
@@ -57,6 +84,8 @@ mod tests {
             extensions: extensions.into_iter().map(String::from).collect(),
             output: None,
             dirs_only: false,
+            exclude: vec![],
+            exclude_common: false,
             formats: vec![],
         }
     }
@@ -97,6 +126,30 @@ mod tests {
     fn ext_with_spaces_after_commas_is_parsed() {
         let cli = Cli::try_parse_from(["file-reporter", ".", "-e", "pdf, docx"]).unwrap();
         assert_eq!(cli.normalized_extensions(), vec!["pdf", "docx"]);
+    }
+
+    #[test]
+    fn excluded_dirs_combine_common_and_repeated_flags() {
+        let cli = Cli::try_parse_from(["file-reporter", "."]).unwrap();
+        assert!(cli.excluded_dirs().is_empty());
+
+        let cli = Cli::try_parse_from([
+            "file-reporter",
+            ".",
+            "-x",
+            "mis fotos, tmp",
+            "--exclude",
+            ".git",
+        ])
+        .unwrap();
+        assert_eq!(cli.excluded_dirs(), vec!["mis fotos", "tmp", ".git"]);
+
+        // `.git` ya está en la lista común: no se repite.
+        let cli = Cli::try_parse_from(["file-reporter", ".", "--exclude-common", "-x", ".git,out"])
+            .unwrap();
+        let dirs = cli.excluded_dirs();
+        assert_eq!(dirs.len(), crate::runner::COMMON_EXCLUDED_DIRS.len() + 1);
+        assert_eq!(dirs.last().map(String::as_str), Some("out"));
     }
 
     #[test]
