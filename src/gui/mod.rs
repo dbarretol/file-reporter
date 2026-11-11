@@ -73,6 +73,13 @@ const UI_ERROR_TTL: Duration = Duration::from_secs(5);
 /// Todos los formatos marcados (valor por defecto y al pulsar "Limpiar").
 const ALL_FORMATS: [bool; 3] = [true; 3];
 
+/// Carpetas a omitir de partida (valor por defecto y al pulsar "Limpiar"):
+/// las comunes de proyectos de código, que casi nunca interesan en un
+/// inventario. La CLI, en cambio, no omite nada si no se le pide.
+fn default_exclude_dirs() -> String {
+    crate::runner::COMMON_EXCLUDED_DIRS.join(", ")
+}
+
 const PERSIST_KEY: &str = eframe::APP_KEY;
 
 #[derive(Default)]
@@ -139,7 +146,7 @@ impl Default for PersistedState {
             input_path: String::new(),
             output_path: String::new(),
             extensions: String::new(),
-            exclude_dirs: String::new(),
+            exclude_dirs: default_exclude_dirs(),
             dirs_only: false,
             formats: ALL_FORMATS,
         }
@@ -371,7 +378,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn persisted_state_from_older_version_keeps_all_formats() {
+    fn persisted_state_from_older_version_gets_the_defaults() {
         // Un estado guardado antes de existir `formats` no debe dejar la
         // GUI sin ningún formato marcado.
         // (eframe lo guarda en RON; `#[serde(default)]` actúa igual en
@@ -379,6 +386,7 @@ mod tests {
         let old = r#"{"input_path":"C:\\x","output_path":"","extensions":"","dirs_only":false}"#;
         let state: PersistedState = serde_json::from_str(old).unwrap();
         assert_eq!(state.formats, ALL_FORMATS);
+        assert_eq!(state.exclude_dirs, default_exclude_dirs());
         assert_eq!(state.input_path, "C:\\x");
     }
 }

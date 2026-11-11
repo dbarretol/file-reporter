@@ -4,7 +4,7 @@ use super::palette::Palette;
 use super::run::RunState;
 use super::util::clean_path_input;
 use super::widgets::{field_note, folder_row};
-use super::{App, ALL_FORMATS};
+use super::{default_exclude_dirs, App, ALL_FORMATS};
 use crate::runner::{self, ReportFormat};
 use eframe::egui;
 
@@ -306,7 +306,7 @@ impl App {
                 && (!self.input_path.is_empty()
                     || !self.output_path.is_empty()
                     || !self.extensions.is_empty()
-                    || !self.exclude_dirs.is_empty()
+                    || self.exclude_dirs != default_exclude_dirs()
                     || self.dirs_only
                     || self.formats != ALL_FORMATS);
             if ui
@@ -326,7 +326,7 @@ impl App {
         self.input_path.clear();
         self.output_path.clear();
         self.extensions.clear();
-        self.exclude_dirs.clear();
+        self.exclude_dirs = default_exclude_dirs();
         self.formats = ALL_FORMATS;
         self.dirs_only = false;
         self.state = RunState::Idle;
