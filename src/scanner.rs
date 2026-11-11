@@ -65,12 +65,44 @@ impl Exclusions {
     }
 }
 
+/// Opciones de `build_tree`. `ScanOptions::default()` recorre todo, sin
+/// filtros ni exclusiones, y sin informar de progreso.
+#[derive(Default)]
+pub struct ScanOptions<'a> {
+    /// Extensiones ya normalizadas (minúsculas, sin punto; ver
+    /// `runner::parse_extensions`). Vacío = todas.
+    pub extensions: &'a [String],
+    /// Solo la estructura de carpetas, sin archivos.
+    pub dirs_only: bool,
+    /// Rutas exactas que se omiten (típicamente los reportes de la carpeta
+    /// de salida), para que una corrida no se incluya a sí misma ni a la
+    /// anterior.
+    pub excluded_paths: &'a [PathBuf],
+    /// Nombres de carpeta que se omiten, con todo su contenido, en cualquier
+    /// nivel por debajo de la raíz (p. ej. `.git`, `node_modules`). Se
+    /// comparan igual que las rutas (ver `same_name`).
+    pub excluded_dir_names: &'a [String],
+    /// Se incrementa por cada archivo que pasa el filtro (o por cada
+    /// carpeta, en modo solo carpetas), a medida que se procesa, para
+    /// informar del progreso a la GUI.
+    pub counter: Option<&'a AtomicUsize>,
+    /// Si pasa a `true`, el recorrido se aborta con error en vez de seguir
+    /// leyendo disco (cancelación pedida por el usuario).
+    pub cancel: Option<&'a AtomicBool>,
+    /// Se incrementa por cada carpeta o archivo que no se pudo leer
+    /// (permisos, entrada corrupta, etc.), para avisar de que el reporte
+    /// quedó incompleto. No cuenta los symlinks, las exclusiones ni la
+    /// cancelación, que son omisiones intencionales.
+    pub skipped: Option<&'a AtomicUsize>,
+}
+
 /// Parámetros del recorrido, iguales para toda la recursión.
 struct Scan<'a> {
     filters: &'a [String],
     dirs_only: bool,
     counter: Option<&'a AtomicUsize>,
     exclusions: Exclusions,
+    excluded_dir_names: &'a [String],
     cancel: Option<&'a AtomicBool>,
     skipped: Option<&'a AtomicUsize>,
 }
@@ -89,36 +121,22 @@ impl Scan<'_> {
     fn passes_filter(&self, extension: &str) -> bool {
         self.filters.is_empty() || self.filters.iter().any(|f| f == extension)
     }
+
+    fn is_excluded_dir(&self, name: &str) -> bool {
+        self.excluded_dir_names.iter().any(|n| same_name(name, n))
+    }
 }
 
-/// Construye recursivamente el árbol jerárquico.
-/// Los errores de lectura (permisos, etc.) se ignoran silenciosamente
-/// por archivo/carpeta para que el escaneo sea robusto.
-///
-/// `filters` son extensiones ya normalizadas (minúsculas, sin punto; ver
-/// `runner::parse_extensions`).
-///
-/// Si se pasa un `counter`, se incrementa por cada archivo que pase el filtro
-/// de extensión (o por cada carpeta, en modo solo carpetas), a medida que se
-/// procesa, para reportar progreso granular a la GUI.
-///
-/// `excluded` son rutas exactas (típicamente los reportes de la carpeta de
-/// salida) que se omiten del escaneo para que una corrida no se incluya a
-/// sí misma ni a la anterior.
-///
-/// Si se pasa `cancel` y está en `true`, se aborta el recorrido devolviendo
-/// error en vez de seguir leyendo disco (cancelación pedida por el usuario).
-///
-/// Si se pasa `skipped`, se incrementa por cada carpeta o archivo que no se
-/// pudo leer (permisos, entrada corrupta, etc. — no por symlinks omitidos
-/// ni por cancelación, que son casos intencionales, no fallos), para que el
-/// resultado final pueda avisar de que el reporte quedó incompleto.
+/// Construye recursivamente el árbol jerárquico (ver `ScanOptions`).
+/// Los errores de lectura (permisos, etc.) se ignoran por archivo/carpeta
+/// para que el escaneo sea robusto, y se cuentan en `skipped`.
 ///
 /// Rendimiento: el tipo de cada entrada y los metadatos de los archivos salen
 /// de la propia lectura del directorio (`DirEntry::file_type`/`metadata`),
 /// que en Windows no requiere abrir cada archivo. Los archivos que no pasan
 /// el filtro, o todos en modo solo carpetas, se descartan antes de pedir sus
-/// metadatos. Las subcarpetas se recorren en paralelo.
+/// metadatos, y las carpetas excluidas por nombre no se llegan a abrir. Las
+/// subcarpetas se recorren en paralelo.
 ///
 /// Recursión y límite de pila: cada nivel de profundidad del árbol añade un
 /// marco a la pila del hilo que lo recorre (el propio `rayon::par_iter` de
@@ -130,22 +148,15 @@ impl Scan<'_> {
 /// con pila explícita eliminaría el límite por completo, pero se descarta por
 /// ahora: es un riesgo bajo y una pila de 16 MB ya cubre profundidades muy
 /// por encima de cualquier estructura de archivos real.
-pub fn build_tree(
-    path: &Path,
-    filters: &[String],
-    dirs_only: bool,
-    counter: Option<&AtomicUsize>,
-    excluded: &[PathBuf],
-    cancel: Option<&AtomicBool>,
-    skipped: Option<&AtomicUsize>,
-) -> Result<Node> {
+pub fn build_tree(path: &Path, opts: &ScanOptions<'_>) -> Result<Node> {
     let scan = Scan {
-        filters,
-        dirs_only,
-        counter,
-        exclusions: Exclusions::new(excluded),
-        cancel,
-        skipped,
+        filters: opts.extensions,
+        dirs_only: opts.dirs_only,
+        counter: opts.counter,
+        exclusions: Exclusions::new(opts.excluded_paths),
+        excluded_dir_names: opts.excluded_dir_names,
+        cancel: opts.cancel,
+        skipped: opts.skipped,
     };
     if scan.cancelled() {
         bail!("Escaneo cancelado");
@@ -238,7 +249,11 @@ fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
                     continue;
                 }
                 if file_type.is_dir() {
-                    subdirs.push(entry_path);
+                    // Excluida por nombre (`.git`, `node_modules`…): ni se
+                    // abre. Omisión intencional, no cuenta como error.
+                    if !scan.is_excluded_dir(&name) {
+                        subdirs.push(entry_path);
+                    }
                     continue;
                 }
                 // Archivo: en modo solo carpetas no aparece en el reporte, y
@@ -402,7 +417,14 @@ mod tests {
         fs::write(dir.path().join("c.TXT"), "hello").unwrap();
 
         let filters = vec!["txt".to_string()];
-        let tree = build_tree(dir.path(), &filters, false, None, &[], None, None).unwrap();
+        let tree = build_tree(
+            dir.path(),
+            &ScanOptions {
+                extensions: &filters,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let mut records = Vec::new();
         flatten_to_records(&tree, &mut records);
@@ -422,7 +444,14 @@ mod tests {
         fs::write(dir.path().join("doc.txt"), "x").unwrap();
 
         let filters = vec!["txt".to_string()];
-        let tree = build_tree(dir.path(), &filters, false, None, &[], None, None).unwrap();
+        let tree = build_tree(
+            dir.path(),
+            &ScanOptions {
+                extensions: &filters,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         // "only_jpgs" queda vacía tras filtrar por txt, así que se descarta
         // del árbol en vez de aparecer como carpeta sin contenido.
@@ -439,7 +468,14 @@ mod tests {
         fs::write(dir.path().join("file.txt"), "x").unwrap();
         fs::write(sub1.join("inner.txt"), "x").unwrap();
 
-        let tree = build_tree(dir.path(), &[], true, None, &[], None, None).unwrap();
+        let tree = build_tree(
+            dir.path(),
+            &ScanOptions {
+                dirs_only: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         assert_eq!(
             node_names(&tree),
@@ -461,12 +497,28 @@ mod tests {
 
         let counter = AtomicUsize::new(0);
         let filters = vec!["txt".to_string()];
-        build_tree(dir.path(), &filters, false, Some(&counter), &[], None, None).unwrap();
+        build_tree(
+            dir.path(),
+            &ScanOptions {
+                extensions: &filters,
+                counter: Some(&counter),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(counter.load(Ordering::Relaxed), 2);
 
         // En modo solo carpetas cuenta carpetas (sin la raíz), no archivos.
         let counter = AtomicUsize::new(0);
-        build_tree(dir.path(), &[], true, Some(&counter), &[], None, None).unwrap();
+        build_tree(
+            dir.path(),
+            &ScanOptions {
+                dirs_only: true,
+                counter: Some(&counter),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(counter.load(Ordering::Relaxed), 1);
     }
 
@@ -481,7 +533,14 @@ mod tests {
         fs::write(sub.join("report.csv"), "x").unwrap();
 
         let excluded = vec![dir.path().join("report.csv")];
-        let tree = build_tree(dir.path(), &[], false, None, &excluded, None, None).unwrap();
+        let tree = build_tree(
+            dir.path(),
+            &ScanOptions {
+                excluded_paths: &excluded,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let mut records = Vec::new();
         flatten_to_records(&tree, &mut records);
@@ -497,7 +556,7 @@ mod tests {
         fs::write(dir.path().join("alpha_dir").join("inner.txt"), "x").unwrap();
         fs::write(dir.path().join("beta.txt"), "x").unwrap();
 
-        let tree = build_tree(dir.path(), &[], false, None, &[], None, None).unwrap();
+        let tree = build_tree(dir.path(), &ScanOptions::default()).unwrap();
         assert_eq!(
             node_names(&tree),
             vec![
@@ -528,12 +587,10 @@ mod tests {
 
         let tree = build_tree(
             dir.path(),
-            &[],
-            false,
-            None,
-            &[mixed_case_excluded],
-            None,
-            None,
+            &ScanOptions {
+                excluded_paths: &[mixed_case_excluded],
+                ..Default::default()
+            },
         )
         .unwrap();
 
@@ -557,12 +614,10 @@ mod tests {
 
         let tree = build_tree(
             dir.path(),
-            &[],
-            false,
-            None,
-            &[mixed_case_excluded],
-            None,
-            None,
+            &ScanOptions {
+                excluded_paths: &[mixed_case_excluded],
+                ..Default::default()
+            },
         )
         .unwrap();
 
@@ -600,7 +655,7 @@ mod tests {
         // contenido real.
         let link_root = dir.path().join("link_root");
         make_junction(&link_root, &real_root);
-        let tree = build_tree(&link_root, &[], false, None, &[], None, None).unwrap();
+        let tree = build_tree(&link_root, &ScanOptions::default()).unwrap();
         assert_eq!(node_names(&tree), vec!["a.txt".to_string()]);
 
         // Caso 2: una junction dentro del árbol (no en la raíz) se sigue
@@ -613,7 +668,7 @@ mod tests {
         fs::create_dir(&outer).unwrap();
         make_junction(&outer.join("link_sub"), &real_sub);
 
-        let tree2 = build_tree(&outer, &[], false, None, &[], None, None).unwrap();
+        let tree2 = build_tree(&outer, &ScanOptions::default()).unwrap();
         assert!(node_names(&tree2).is_empty());
     }
 
@@ -624,7 +679,7 @@ mod tests {
         fs::create_dir(dir.path().join("sub")).unwrap();
         fs::write(dir.path().join("sub").join("two.txt"), "abcdefgh").unwrap();
 
-        let tree = build_tree(dir.path(), &[], false, None, &[], None, None).unwrap();
+        let tree = build_tree(dir.path(), &ScanOptions::default()).unwrap();
         let mut records = Vec::new();
         flatten_to_records(&tree, &mut records);
 
@@ -638,5 +693,89 @@ mod tests {
         let two = records.iter().find(|r| r.name == "two").unwrap();
         assert_eq!(two.size_bytes, 8);
         assert!(two.full_path.ends_with("two.txt"));
+    }
+
+    #[test]
+    fn build_tree_skips_excluded_dir_names_at_any_level() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join(".git").join("objects")).unwrap();
+        fs::write(root.join(".git").join("HEAD"), "x").unwrap();
+        fs::create_dir_all(root.join("web").join("node_modules").join("pkg")).unwrap();
+        fs::write(
+            root.join("web")
+                .join("node_modules")
+                .join("pkg")
+                .join("i.js"),
+            "x",
+        )
+        .unwrap();
+        fs::write(root.join("web").join("app.js"), "x").unwrap();
+        // Un archivo con el mismo nombre no es una carpeta: se conserva.
+        fs::write(root.join("node_modules"), "x").unwrap();
+
+        let names = vec![".git".to_string(), "node_modules".to_string()];
+        let skipped = AtomicUsize::new(0);
+        let tree = build_tree(
+            root,
+            &ScanOptions {
+                excluded_dir_names: &names,
+                skipped: Some(&skipped),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let mut records = Vec::new();
+        flatten_to_records(&tree, &mut records);
+        let mut paths: Vec<String> = records.iter().map(|r| r.full_path.clone()).collect();
+        paths.sort();
+        assert_eq!(paths.len(), 2, "{paths:?}");
+        assert!(paths.iter().any(|p| p.ends_with("app.js")));
+        assert!(paths.iter().any(|p| p.ends_with("node_modules")));
+        assert_eq!(count_dirs(&tree), 1, "solo queda `web`");
+        // Omitir a propósito no es un fallo de lectura.
+        assert_eq!(skipped.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn build_tree_never_excludes_the_root_itself() {
+        // Si el usuario elige escanear `.git`, se escanea: la exclusión por
+        // nombre solo afecta a lo que hay debajo.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join(".git");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("HEAD"), "x").unwrap();
+
+        let names = vec![".git".to_string()];
+        let tree = build_tree(
+            &root,
+            &ScanOptions {
+                excluded_dir_names: &names,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(node_names(&tree), vec!["HEAD".to_string()]);
+    }
+
+    #[test]
+    #[cfg(any(windows, target_os = "macos"))]
+    fn build_tree_matches_excluded_dir_names_case_insensitively() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("Node_Modules")).unwrap();
+        fs::create_dir(dir.path().join("src")).unwrap();
+
+        let names = vec!["node_modules".to_string()];
+        let tree = build_tree(
+            dir.path(),
+            &ScanOptions {
+                dirs_only: true,
+                excluded_dir_names: &names,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(node_names(&tree), vec!["src".to_string()]);
     }
 }

@@ -45,12 +45,16 @@ fn main() -> Result<()> {
     let input = parsed.path.clone();
     let output = parsed.output.clone().unwrap_or_else(|| input.clone());
     let extensions = parsed.normalized_extensions();
+    let exclude_dirs = parsed.excluded_dirs();
 
     if parsed.dirs_only {
         println!("📂 Modo: solo estructura de carpetas");
     }
     if !extensions.is_empty() {
         println!("🎯 Filtrando extensiones: {:?}", extensions);
+    }
+    if !exclude_dirs.is_empty() {
+        println!("🚫 Omitiendo carpetas: {:?}", exclude_dirs);
     }
     println!("🔍 Escaneando: {}", input.display());
 
@@ -61,6 +65,7 @@ fn main() -> Result<()> {
             output,
             extensions,
             dirs_only: parsed.dirs_only,
+            exclude_dirs,
             formats: parsed.formats_or_all(),
         },
         None,

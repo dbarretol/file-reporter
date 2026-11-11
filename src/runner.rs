@@ -1,4 +1,5 @@
-use crate::{reporters, scanner};
+use crate::reporters;
+use crate::scanner::{self, ScanOptions};
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -43,6 +44,9 @@ pub struct RunConfig {
     pub output: PathBuf,
     pub extensions: Vec<String>,
     pub dirs_only: bool,
+    /// Nombres de carpeta que se omiten en cualquier nivel (ver
+    /// `parse_dir_names`).
+    pub exclude_dirs: Vec<String>,
     /// Reportes a generar (al menos uno), sin repetidos.
     pub formats: Vec<ReportFormat>,
 }
@@ -71,6 +75,39 @@ pub fn parse_extensions<'a>(inputs: impl IntoIterator<Item = &'a str>) -> Vec<St
             let ext = token.trim_start_matches('.').to_lowercase();
             if !ext.is_empty() && !out.contains(&ext) {
                 out.push(ext);
+            }
+        }
+    }
+    out
+}
+
+/// Carpetas que suelen inflar el reporte de un proyecto de código sin
+/// aportar nada: control de versiones, dependencias y artefactos de
+/// compilación. Las ofrecen la opción `--exclude-common` de la CLI y la
+/// sugerencia "Comunes" de la GUI.
+pub const COMMON_EXCLUDED_DIRS: [&str; 7] = [
+    ".git",
+    "node_modules",
+    "target",
+    "__pycache__",
+    ".venv",
+    "dist",
+    "build",
+];
+
+/// Normaliza una lista de nombres de carpeta tal como la escribe el usuario,
+/// igual en CLI y GUI: separa por comas o punto y coma (no por espacios: un
+/// nombre de carpeta puede tenerlos), quita espacios a los lados y las
+/// barras finales (`node_modules/`), y descarta vacíos y repetidos
+/// (conservando el orden). Mayúsculas y minúsculas se respetan: la
+/// comparación la decide el escáner según el sistema de archivos.
+pub fn parse_dir_names<'a>(inputs: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for input in inputs {
+        for token in input.split([',', ';']) {
+            let name = token.trim().trim_end_matches(['/', '\\']).trim();
+            if !name.is_empty() && !out.iter().any(|n| n == name) {
+                out.push(name.to_string());
             }
         }
     }
@@ -187,12 +224,15 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     // progreso granular archivo a archivo a medida que se procesa cada uno.
     let tree = scanner::build_tree(
         &cfg.input,
-        &cfg.extensions,
-        cfg.dirs_only,
-        progress.as_ref().map(|p| &p.done),
-        &excluded,
-        cancel_flag,
-        Some(&skipped),
+        &ScanOptions {
+            extensions: &cfg.extensions,
+            dirs_only: cfg.dirs_only,
+            excluded_paths: &excluded,
+            excluded_dir_names: &cfg.exclude_dirs,
+            counter: progress.as_ref().map(|p| &p.done),
+            cancel: cancel_flag,
+            skipped: Some(&skipped),
+        },
     )
     .context("Error al construir el árbol de directorios")?;
     if is_cancelled(cancel_flag) {
@@ -311,6 +351,7 @@ mod tests {
             output: dir.path().join("out"),
             extensions: vec![],
             dirs_only: false,
+            exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
         };
         let err = run(&cfg, None).unwrap_err();
@@ -327,6 +368,7 @@ mod tests {
             output: dir.path().join("out"),
             extensions: vec![],
             dirs_only: false,
+            exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
         };
         let err = run(&cfg, None).unwrap_err();
@@ -347,6 +389,7 @@ mod tests {
             output: output.clone(),
             extensions: vec![],
             dirs_only: false,
+            exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
         };
         let summary = run(&cfg, None).unwrap();
@@ -363,6 +406,38 @@ mod tests {
     }
 
     #[test]
+    fn parse_dir_names_splits_by_comma_only_and_keeps_case() {
+        assert_eq!(
+            parse_dir_names(["Mis fotos, .git;node_modules/", " .git ", "", "build\\"]),
+            vec!["Mis fotos", ".git", "node_modules", "build"]
+        );
+    }
+
+    #[test]
+    fn run_omits_excluded_dirs_without_counting_them_as_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        fs::create_dir_all(input.join("target").join("debug")).unwrap();
+        fs::write(input.join("target").join("debug").join("app.exe"), "x").unwrap();
+        fs::write(input.join("main.rs"), "x").unwrap();
+
+        let cfg = RunConfig {
+            input,
+            output: dir.path().join("out"),
+            extensions: vec![],
+            dirs_only: false,
+            exclude_dirs: vec!["target".to_string()],
+            formats: vec![ReportFormat::Md],
+        };
+        let summary = run(&cfg, None).unwrap();
+        assert_eq!(summary.files_count, 1);
+        assert_eq!(summary.dirs_count, 0);
+        assert_eq!(summary.skipped_count, 0);
+        let md = fs::read_to_string(dir.path().join("out").join("report.md")).unwrap();
+        assert!(!md.contains("target"));
+    }
+
+    #[test]
     fn run_generates_only_the_requested_formats() {
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("in");
@@ -375,6 +450,7 @@ mod tests {
             output: output.clone(),
             extensions: vec![],
             dirs_only: false,
+            exclude_dirs: vec![],
             // Desordenado y con repetidos: se normaliza al orden de ALL.
             formats: vec![ReportFormat::Json, ReportFormat::Csv, ReportFormat::Json],
         };
@@ -395,6 +471,7 @@ mod tests {
             output: dir.path().join("out"),
             extensions: vec![],
             dirs_only: false,
+            exclude_dirs: vec![],
             formats: vec![],
         };
         let err = run(&cfg, None).unwrap_err();
@@ -417,6 +494,7 @@ mod tests {
             output,
             extensions: vec![],
             dirs_only: true,
+            exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
         };
         let summary = run(&cfg, None).unwrap();
@@ -443,6 +521,7 @@ mod tests {
             output: dir.path().join("out"),
             extensions: vec![],
             dirs_only: false,
+            exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
         };
         let progress = Progress::new();
@@ -471,6 +550,7 @@ mod tests {
             output,
             extensions: vec![],
             dirs_only: false,
+            exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
         };
         let progress = Progress::new();
