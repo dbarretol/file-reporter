@@ -715,8 +715,10 @@ impl App {
                 ui.label("Ya existen reportes de una corrida anterior en la carpeta de salida:");
                 ui.add_space(6.0);
                 for f in files {
+                    // Espacio no separable: si la ruta no cabe en una línea,
+                    // que no se corte justo después de la viñeta.
                     ui.label(
-                        egui::RichText::new(format!("• {}", f.display()))
+                        egui::RichText::new(format!("•\u{a0}{}", f.display()))
                             .monospace()
                             .size(11.0),
                     );
