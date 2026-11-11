@@ -26,12 +26,10 @@ pub struct Cli {
 }
 
 impl Cli {
-    /// Normaliza las extensiones: minúsculas y sin punto inicial.
+    /// Normaliza las extensiones con las mismas reglas que la GUI (ver
+    /// `runner::parse_extensions`).
     pub fn normalized_extensions(&self) -> Vec<String> {
-        self.extensions
-            .iter()
-            .map(|e| e.trim_start_matches('.').to_lowercase())
-            .collect()
+        crate::runner::parse_extensions(self.extensions.iter().map(String::as_str))
     }
 }
 
@@ -64,6 +62,12 @@ mod tests {
     fn normalized_extensions_empty_stays_empty() {
         let cli = cli_with(vec![]);
         assert!(cli.normalized_extensions().is_empty());
+    }
+
+    #[test]
+    fn ext_with_spaces_after_commas_is_parsed() {
+        let cli = Cli::try_parse_from(["file-reporter", ".", "-e", "pdf, docx"]).unwrap();
+        assert_eq!(cli.normalized_extensions(), vec!["pdf", "docx"]);
     }
 
     #[test]

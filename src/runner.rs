@@ -13,6 +13,23 @@ pub struct RunConfig {
     pub dirs_only: bool,
 }
 
+/// Normaliza una lista de extensiones tal como la escribe el usuario, igual
+/// en CLI y GUI: separa por comas, punto y coma o espacios, quita el punto
+/// inicial, pasa a minúsculas y descarta vacíos y repetidos (conservando el
+/// orden). Así `"pdf, .DOCX;jpg"` y `-e pdf -e " docx"` dan lo mismo.
+pub fn parse_extensions<'a>(inputs: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for input in inputs {
+        for token in input.split(|c: char| c == ',' || c == ';' || c.is_whitespace()) {
+            let ext = token.trim_start_matches('.').to_lowercase();
+            if !ext.is_empty() && !out.contains(&ext) {
+                out.push(ext);
+            }
+        }
+    }
+    out
+}
+
 /// Reporte de progreso compartido entre el worker y la GUI.
 #[derive(Debug, Default)]
 pub struct Progress {
@@ -195,6 +212,26 @@ fn is_cancelled(cancel: Option<&AtomicBool>) -> bool {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn parse_extensions_accepts_mixed_separators_dots_and_case() {
+        assert_eq!(
+            parse_extensions(["pdf, .DOCX;jpg  txt"]),
+            vec!["pdf", "docx", "jpg", "txt"]
+        );
+    }
+
+    #[test]
+    fn parse_extensions_trims_values_split_by_the_cli() {
+        // `-e "pdf, docx"` con `value_delimiter = ','` llega como ["pdf", " docx"].
+        assert_eq!(parse_extensions(["pdf", " docx"]), vec!["pdf", "docx"]);
+    }
+
+    #[test]
+    fn parse_extensions_drops_empty_and_duplicates() {
+        assert_eq!(parse_extensions(["", " , ;", "txt", ".TXT"]), vec!["txt"]);
+        assert!(parse_extensions(std::iter::empty()).is_empty());
+    }
 
     #[test]
     fn run_fails_on_nonexistent_input() {

@@ -878,11 +878,7 @@ impl App {
         let extensions: Vec<String> = if self.dirs_only {
             Vec::new()
         } else {
-            self.extensions
-                .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
-                .map(|s| s.trim().trim_start_matches('.').to_lowercase())
-                .filter(|s| !s.is_empty())
-                .collect()
+            runner::parse_extensions([self.extensions.as_str()])
         };
 
         RunConfig {
@@ -940,7 +936,7 @@ impl App {
                         if progress.cancel.load(Ordering::Relaxed) {
                             WorkerMsg::Cancelled
                         } else {
-                            WorkerMsg::Failed(e.to_string())
+                            WorkerMsg::Failed(error_chain(&e))
                         }
                     }
                     Err(panic_payload) => {
@@ -1059,6 +1055,13 @@ fn result_row(ui: &mut egui::Ui, label: &str, path: &std::path::Path) {
         ui.label(egui::RichText::new(display).monospace().size(11.0))
             .on_hover_text(&path_str);
     });
+}
+
+/// Mensaje de error completo para mostrar al usuario: el contexto y todas
+/// sus causas (`contexto: causa: …`). `to_string()` de anyhow solo da el
+/// contexto exterior ("Error al construir el árbol…"), sin decir por qué.
+fn error_chain(e: &anyhow::Error) -> String {
+    format!("{e:#}")
 }
 
 /// Limpia una ruta pegada por el usuario: quita espacios y, si vienen,
@@ -1184,6 +1187,17 @@ mod tests {
         let out = truncate_path_display(s, 12);
         assert_eq!(out.chars().count(), 12);
         assert!(out.starts_with('…'));
+    }
+
+    #[test]
+    fn error_chain_includes_the_root_cause() {
+        use anyhow::Context;
+        let err = std::fs::read_dir("no-existe-esta-carpeta-xyz")
+            .context("Error al construir el árbol de directorios")
+            .unwrap_err();
+        let msg = error_chain(&err);
+        assert!(msg.starts_with("Error al construir el árbol de directorios: "));
+        assert!(msg.len() > "Error al construir el árbol de directorios: ".len());
     }
 
     #[test]
