@@ -61,14 +61,16 @@ fn main() -> Result<()> {
             output,
             extensions,
             dirs_only: parsed.dirs_only,
+            formats: parsed.formats_or_all(),
         },
         None,
     )?;
 
     println!("\n✅ Reportes generados correctamente:");
-    println!("   📄 CSV:      {}", summary.csv_path.display());
-    println!("   📄 Markdown: {}", summary.md_path.display());
-    println!("   📄 JSON:     {}", summary.json_path.display());
+    for (format, path) in &summary.reports {
+        let label = format!("{}:", format.label());
+        println!("   📄 {label:<9} {}", path.display());
+    }
     if summary.dirs_only {
         println!("\n📊 Carpetas procesadas: {}", summary.dirs_count);
     } else {
