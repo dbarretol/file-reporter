@@ -64,6 +64,7 @@ C:\Demo\Proyecto
 - 📅 Metadatos por archivo: nombre, extensión, tamaño (MB y bytes exactos), fechas de creación y modificación, y ruta.
 - 🎯 **Filtro por extensiones** (`pdf, docx, jpg…`).
 - 📂 **Modo solo carpetas:** genera únicamente la jerarquía de directorios, sin archivos.
+- 🚫 **Omite carpetas por nombre** en cualquier nivel (`.git`, `node_modules`, `target`…), sin llegar a leerlas.
 
 **Rendimiento y robustez**
 - 🚀 Escaneo **paralelo** con [`rayon`](https://crates.io/crates/rayon), en una sola pasada por el disco.
@@ -125,9 +126,10 @@ El mismo ejecutable funciona en dos modos:
 1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…" o arrástrala a la ventana.
 2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
 3. *(Opcional)* Escribe las **extensiones** a incluir. Las sugerencias se suman a lo escrito; pulsarlas otra vez las quita.
-4. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
-5. *(Opcional)* Desmarca los **formatos** que no necesites (CSV, Markdown, JSON).
-6. Pulsa **▶ Generar reportes** (o Enter).
+4. *(Opcional)* Escribe las **carpetas a omitir** por nombre. La sugerencia "Carpetas de proyectos" añade `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`.
+5. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
+6. *(Opcional)* Desmarca los **formatos** que no necesites (CSV, Markdown, JSON).
+7. Pulsa **▶ Generar reportes** (o Enter).
 
 ### ⌨️ Línea de comandos
 
@@ -147,6 +149,10 @@ file-reporter /ruta -d
 
 # Solo algunos formatos
 file-reporter /ruta -f csv,md
+
+# Omitir carpetas por nombre (.git, node_modules, target… con --exclude-common)
+file-reporter /ruta --exclude-common
+file-reporter /ruta -x "mis fotos" -x tmp,cache
 ```
 
 En Windows (PowerShell):
@@ -161,6 +167,8 @@ En Windows (PowerShell):
 | `-e`, `--ext` | Extensiones a incluir, separadas por coma, punto y coma o espacio (`"pdf, .DOCX"` vale). Sin esta opción se incluyen todas |
 | `-o`, `--output` | Carpeta de salida (por defecto: la carpeta escaneada) |
 | `-d`, `--dirs-only` | Solo estructura de carpetas. No se puede combinar con `-e` |
+| `-x`, `--exclude` | Carpeta a omitir por nombre (no ruta), en cualquier nivel y con todo su contenido. Se puede repetir o separar por comas |
+| `--exclude-common` | Omite `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build` |
 | `-f`, `--format` | Reportes a generar: `csv`, `md` (o `markdown`), `json`, separados por coma. Sin esta opción se generan los tres |
 | `-h`, `--help` / `-V`, `--version` | Ayuda / versión |
 
@@ -304,7 +312,7 @@ src/
 - **Una sola pasada por el disco:** no se cuentan los archivos antes de escanearlos. El progreso se reporta en vivo mientras se recorre el árbol.
 - **Pocas llamadas al sistema:** el tipo y los metadatos de cada entrada salen de la propia lectura del directorio (en Windows, sin abrir cada archivo); los archivos que no pasan el filtro se descartan antes de leer sus metadatos, y el CSV se escribe directamente desde el árbol, sin una copia intermedia en memoria.
 - **Symlinks y junctions:** no se siguen (se detectan con el tipo de la entrada), lo que evita ciclos. La carpeta raíz elegida por el usuario sí se sigue aunque sea un enlace (por ejemplo, carpetas de OneDrive).
-- **Errores por elemento:** una carpeta sin permisos se omite y se contabiliza; no detiene el escaneo.
+- **Errores por elemento:** una carpeta sin permisos se omite y se contabiliza; no detiene el escaneo. Las carpetas omitidas a propósito (por nombre) no cuentan como errores.
 - **GUI siempre responsiva:** el escaneo corre en un hilo aparte con pila ampliada y `catch_unwind`, de modo que un panic interno se muestra como error y no cierra la aplicación. La cancelación se distingue de un error real mediante una bandera compartida.
 - **Rutas Unicode:** acentos y emojis se conservan en los tres reportes, y la exclusión de los propios reportes compara rutas sin distinguir mayúsculas, también fuera de ASCII.
 
@@ -339,7 +347,6 @@ Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.githu
 
 ## 🧭 Hoja de ruta
 
-- [ ] Lista configurable de carpetas a excluir (`.git`, `node_modules`, …).
 - [ ] Vista previa del árbol antes de exportar.
 - [ ] Selector manual de tema claro/oscuro.
 - [ ] Binarios precompilados en *Releases* e instalador `.msi`.
