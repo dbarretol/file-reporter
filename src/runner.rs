@@ -275,8 +275,8 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     // No hacemos una pasada previa solo para contar archivos: eso implicaría
     // leer el disco dos veces (una para contar, otra para construir el
     // árbol), casi duplicando el tiempo total. El total se desconoce hasta
-    // el final; la GUI muestra el contador `done` en vivo y el tiempo
-    // transcurrido.
+    // el final; la GUI y la CLI muestran el contador `done` en vivo y el
+    // tiempo transcurrido.
     if let Some(p) = &progress {
         p.done.store(0, Ordering::Relaxed);
     }

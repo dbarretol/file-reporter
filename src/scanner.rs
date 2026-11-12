@@ -86,7 +86,7 @@ pub struct ScanOptions<'a> {
     pub excluded_dir_names: &'a [String],
     /// Se incrementa por cada archivo que pasa el filtro (o por cada
     /// carpeta, en modo solo carpetas), a medida que se procesa, para
-    /// informar del progreso a la GUI.
+    /// informar del progreso (GUI o indicador de la CLI).
     pub counter: Option<&'a AtomicUsize>,
     /// Si pasa a `true`, el recorrido se aborta con error en vez de seguir
     /// leyendo disco (cancelación pedida por el usuario).

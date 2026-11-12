@@ -1,6 +1,7 @@
 # 📋 File Reporter
 
 [![CI](https://github.com/dbarretol/file-reporter/actions/workflows/ci.yml/badge.svg)](https://github.com/dbarretol/file-reporter/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/dbarretol/file-reporter)](https://github.com/dbarretol/file-reporter/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 
@@ -74,9 +75,14 @@ C:\Demo\Proyecto
 
 **Rendimiento y robustez**
 - 🚀 Escaneo **paralelo** con [`rayon`](https://crates.io/crates/rayon), en una sola pasada por el disco.
-- 🛡️ Sigue funcionando ante carpetas sin permisos y avisa cuántos elementos se omitieron.
+- 🛡️ Sigue funcionando ante carpetas sin permisos y avisa cuántos elementos se omitieron (con `-v`, cuáles y por qué).
 - 🔁 Detecta symlinks y junctions cíclicos para no quedarse colgado.
 - 🔒 CSV protegido contra *formula injection*.
+
+**Línea de comandos**
+- ⏳ Contador de archivos encontrados y tiempo transcurrido mientras escanea (se oculta si la salida se redirige).
+- 🔎 `-v/--verbose`: lista lo omitido y el motivo (sin acceso, enlaces no seguidos, carpetas excluidas).
+- 🧩 Todas las opciones de la GUI (filtros, exclusiones, formatos, solo carpetas), listas para scripts.
 
 **Interfaz gráfica**
 - 🖱️ Arrastra y suelta una carpeta sobre la ventana, o usa "Examinar…".
@@ -347,7 +353,7 @@ src/
 - **Una sola pasada por el disco:** no se cuentan los archivos antes de escanearlos. El progreso se reporta en vivo mientras se recorre el árbol.
 - **Pocas llamadas al sistema:** el tipo y los metadatos de cada entrada salen de la propia lectura del directorio (en Windows, sin abrir cada archivo); los archivos que no pasan el filtro se descartan antes de leer sus metadatos, y el CSV se escribe directamente desde el árbol, sin una copia intermedia en memoria.
 - **Symlinks y junctions:** no se siguen (se detectan con el tipo de la entrada), lo que evita ciclos. La carpeta raíz elegida por el usuario sí se sigue aunque sea un enlace (por ejemplo, carpetas de OneDrive).
-- **Errores por elemento:** una carpeta sin permisos se omite y se contabiliza; no detiene el escaneo. Las carpetas omitidas a propósito (por nombre) no cuentan como errores.
+- **Errores por elemento:** una carpeta sin permisos se omite y se contabiliza; no detiene el escaneo. Las carpetas omitidas a propósito (por nombre) no cuentan como errores. Cada omisión se registra con [`tracing`](https://crates.io/crates/tracing), que la CLI muestra con `-v`.
 - **GUI siempre responsiva:** el escaneo corre en un hilo aparte con pila ampliada y `catch_unwind`, de modo que un panic interno se muestra como error y no cierra la aplicación. La cancelación se distingue de un error real mediante una bandera compartida.
 - **Rutas Unicode:** acentos y emojis se conservan en los tres reportes, y la exclusión de los propios reportes compara rutas sin distinguir mayúsculas, también fuera de ASCII.
 
@@ -356,6 +362,8 @@ src/
 ### Tecnologías
 
 [`clap`](https://crates.io/crates/clap) (CLI) ·
+[`indicatif`](https://crates.io/crates/indicatif) (progreso en la CLI) ·
+[`tracing`](https://crates.io/crates/tracing) (registro con `-v`) ·
 [`egui`/`eframe`](https://github.com/emilk/egui) (GUI) ·
 [`rfd`](https://crates.io/crates/rfd) (diálogos nativos) ·
 [`rayon`](https://crates.io/crates/rayon) (paralelismo) ·
