@@ -189,6 +189,8 @@ En Windows (PowerShell):
 | `-f`, `--format` | Reportes a generar: `csv`, `md` (o `markdown`), `json`, separados por coma. Sin esta opción se generan los tres |
 | `-h`, `--help` / `-V`, `--version` | Ayuda / versión |
 
+Mientras escanea, la terminal muestra cuántos archivos (o carpetas) lleva encontrados y el tiempo transcurrido; después indica que está escribiendo los reportes. Al terminar, el indicador desaparece y queda el resumen. Si la salida se redirige a un archivo, no se muestra.
+
 > **Sobre las extensiones:** se usa lo que va tras el **último** punto del nombre. `foo.tar.gz` tiene extensión `gz`, no `tar.gz`. Los archivos sin punto (`LICENSE`, `Makefile`) no tienen extensión y quedan fuera de cualquier filtro.
 
 ---
@@ -315,7 +317,7 @@ CLI y GUI comparten exactamente la misma lógica; solo cambia la forma de recibi
 build.rs             # Windows: incrusta el icono y la versión en el .exe
 src/
 ├── main.rs          # Punto de entrada: decide entre CLI y GUI
-├── cli.rs           # Argumentos de línea de comandos (clap)
+├── cli.rs           # Argumentos de línea de comandos (clap) e indicador de progreso
 ├── gui/             # Interfaz gráfica (egui/eframe)
 │   ├── mod.rs       # Arranque, estado de la app y paneles fijos
 │   ├── form.rs      # Formulario y botones
@@ -381,7 +383,6 @@ Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.githu
 ## 🧭 Hoja de ruta
 
 - [ ] Instalador `.msi` para Windows ([#15](https://github.com/dbarretol/file-reporter/issues/15)).
-- [ ] Barra de progreso en la línea de comandos ([#7](https://github.com/dbarretol/file-reporter/issues/7)).
 - [ ] Registro de las rutas omitidas con `tracing` ([#8](https://github.com/dbarretol/file-reporter/issues/8)).
 - [ ] Vista previa del árbol antes de exportar ([#13](https://github.com/dbarretol/file-reporter/issues/13)).
 
