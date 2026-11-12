@@ -2,8 +2,7 @@ use crate::models::{FileRecord, Node};
 use crate::scanner;
 use anyhow::{Context, Result};
 use std::borrow::Cow;
-use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::Write;
 use std::path::Path;
 
 /// BOM UTF-8: marca al inicio del archivo que indica a Excel
@@ -49,29 +48,32 @@ fn sanitize_for_spreadsheet(s: &str) -> Cow<'_, str> {
 }
 
 /// Escribe una fila por archivo del árbol, generándolas de una en una
-/// mientras se recorre (sin una lista intermedia en memoria).
+/// mientras se recorre (sin una lista intermedia en memoria). Se escribe en
+/// un temporal que solo reemplaza al reporte anterior si todo va bien (ver
+/// `reporters::write_atomic`).
 pub fn write_csv(root: &Node, output: &Path) -> Result<()> {
-    // 1. Crear el archivo manualmente para poder escribir el BOM primero.
-    let file = File::create(output)
-        .with_context(|| format!("No se pudo crear CSV en {}", output.display()))?;
-    let mut buf_writer = BufWriter::new(file);
+    super::write_atomic(output, "CSV", |buf_writer| {
+        write_rows(root, buf_writer, output)
+    })
+}
 
-    // 2. Escribir BOM UTF-8 → fuerza a Excel a interpretar el archivo como UTF-8.
+fn write_rows(root: &Node, buf_writer: &mut impl Write, output: &Path) -> Result<()> {
+    // 1. Escribir BOM UTF-8 → fuerza a Excel a interpretar el archivo como UTF-8.
     buf_writer
         .write_all(UTF8_BOM)
         .context("No se pudo escribir el BOM UTF-8 en el CSV")?;
 
-    // 3. Construir el CSV writer con punto y coma (;) como delimitador,
+    // 2. Construir el CSV writer con punto y coma (;) como delimitador,
     //    compatible con la configuración regional de Excel en es-ES / es-LA.
     let mut wtr = writer_builder().has_headers(false).from_writer(buf_writer);
 
-    // 4. Cabecera escrita a mano y no por `serialize`, que solo la emite junto
+    // 3. Cabecera escrita a mano y no por `serialize`, que solo la emite junto
     //    con la primera fila: sin archivos (modo solo carpetas, filtro sin
     //    coincidencias) el CSV quedaría vacío en vez de con sus columnas.
     wtr.write_record(HEADERS)
         .with_context(|| format!("No se pudo escribir el CSV en {}", output.display()))?;
 
-    // 5. Una fila por archivo. `name`, `extension`, `directory` y `full_path`
+    // 4. Una fila por archivo. `name`, `extension`, `directory` y `full_path`
     //    salen de nombres en disco, fuera del control del usuario (descargas,
     //    carpetas compartidas): se sanean antes de escribir para evitar CSV
     //    injection (`x.=1+1` tiene extensión `=1+1`). Fechas y tamaños los
