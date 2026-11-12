@@ -3,7 +3,7 @@ use crate::naming::{self, DEFAULT_REPORT_NAME};
 use crate::reporters;
 use crate::scanner::{self, ScanLog, ScanOptions, SkippedItem};
 use anyhow::{bail, Context, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -194,31 +194,17 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
 
     let reports = cfg.report_paths();
 
-    // Excluir del escaneo los reportes de una corrida anterior (siempre, de
-    // los tres formatos: también los que esta corrida no genera), con el
-    // nombre por defecto y con el de esta corrida, sus temporales
-    // (`report.csv.tmp`…, que quedarían si un corte de luz interrumpe la
-    // escritura; ver `reporters::write_atomic`), los guardados con nombre
-    // automático (`report-docs-2026-11-12.csv`…, ver `is_auto_report_name`)
-    // y, si la salida es una carpeta distinta de la entrada, la carpeta de
-    // salida completa (por si contiene sobras de corridas previas). Cuando
-    // output == input no se puede excluir la carpeta entera, solo los
-    // archivos exactos.
-    let mut excluded: Vec<PathBuf> = [DEFAULT_REPORT_NAME, cfg.report_name.as_str()]
-        .into_iter()
-        .flat_map(|base| ReportFormat::ALL.map(|f| cfg.output.join(f.file_name(base))))
-        .flat_map(|p| [reporters::temp_path(&p), p])
-        .collect();
-    // Una sola lectura de la carpeta de salida (si ya existe), no del árbol.
-    if let Ok(entries) = std::fs::read_dir(&cfg.output) {
-        excluded.extend(
-            entries
-                .flatten()
-                .filter(|e| naming::is_auto_report_name(&e.file_name().to_string_lossy()))
-                .map(|e| e.path()),
-        );
-    }
+    // Excluir del escaneo los reportes de corridas anteriores (ver
+    // `previous_reports`), tanto en la carpeta de salida como en la escaneada:
+    // con otra salida (`-o`), los que dejó una corrida anterior en la propia
+    // carpeta escaneada también son reportes, no archivos del usuario. Solo se
+    // miran esas dos carpetas, no el árbol entero: un `report.csv` más abajo
+    // es un archivo cualquiera. Si la salida es otra carpeta, además se
+    // excluye entera (por si contiene sobras de corridas previas); cuando
+    // output == input no se puede excluir la carpeta, solo los archivos.
+    let mut excluded = previous_reports(&cfg.output, &cfg.report_name);
     if cfg.output != cfg.input {
+        excluded.extend(previous_reports(&cfg.input, &cfg.report_name));
         excluded.push(cfg.output.clone());
     }
 
@@ -331,6 +317,30 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         excluded_dirs: log.excluded_dirs,
         ext_stats,
     })
+}
+
+/// Reportes de corridas anteriores que puede haber en `dir` (no en sus
+/// subcarpetas): los de los tres formatos (también los que esta corrida no
+/// genera) con el nombre por defecto y con `run_name`, sus temporales
+/// (`report.csv.tmp`…, que quedarían si un corte de luz interrumpe la
+/// escritura; ver `reporters::write_atomic`) y los guardados con nombre
+/// automático (`report-docs-2026-11-12.csv`…, ver
+/// `naming::is_auto_report_name`). Una sola lectura de `dir`, si existe.
+fn previous_reports(dir: &Path, run_name: &str) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = [DEFAULT_REPORT_NAME, run_name]
+        .into_iter()
+        .flat_map(|base| ReportFormat::ALL.map(|f| dir.join(f.file_name(base))))
+        .flat_map(|p| [reporters::temp_path(&p), p])
+        .collect();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        paths.extend(
+            entries
+                .flatten()
+                .filter(|e| naming::is_auto_report_name(&e.file_name().to_string_lossy()))
+                .map(|e| e.path()),
+        );
+    }
+    paths
 }
 
 /// `true` si se pidió cancelar el escaneo en curso.
@@ -514,6 +524,52 @@ mod tests {
         assert!(!input.join("report.csv.tmp").exists());
         let csv = fs::read_to_string(input.join("report.csv")).unwrap();
         assert!(!csv.contains("report.csv"));
+    }
+
+    #[test]
+    fn run_with_another_output_ignores_old_reports_in_the_scanned_folder() {
+        // Con otra carpeta de salida, los reportes que dejó en la carpeta
+        // escaneada una corrida anterior (sin -o) no son archivos del
+        // usuario: no deben aparecer. Un `report.csv` en una subcarpeta sí es
+        // un archivo más.
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        let output = dir.path().join("out");
+        fs::create_dir_all(input.join("sub")).unwrap();
+        fs::write(input.join("a.txt"), "x").unwrap();
+        for old in [
+            "report.csv",
+            "report.md",
+            "report.json",
+            "report.json.tmp",
+            "prueba.csv",
+            "report-in-2026-11-12.md",
+        ] {
+            fs::write(input.join(old), "viejo").unwrap();
+        }
+        fs::write(input.join("sub").join("report.csv"), "del usuario").unwrap();
+
+        let cfg = RunConfig {
+            input: input.clone(),
+            output: output.clone(),
+            extensions: vec![],
+            dirs_only: false,
+            exclude_dirs: vec![],
+            formats: vec![ReportFormat::Csv],
+            report_name: "prueba".to_string(),
+        };
+        let summary = run(&cfg, None).unwrap();
+        assert_eq!(summary.files_count, 2, "a.txt y sub/report.csv");
+        let csv = fs::read_to_string(output.join("prueba.csv")).unwrap();
+        // Una sola fila llamada "report": la de la subcarpeta.
+        let rows: Vec<&str> = csv.lines().filter(|l| l.starts_with("report")).collect();
+        assert_eq!(rows.len(), 1, "{csv}");
+        assert!(rows[0].contains("sub"), "{csv}");
+        // Los reportes viejos de la entrada no se tocan.
+        assert_eq!(
+            fs::read_to_string(input.join("report.csv")).unwrap(),
+            "viejo"
+        );
     }
 
     #[test]
