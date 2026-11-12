@@ -72,10 +72,21 @@ pub(super) fn open_in_explorer(path: &Path) -> std::io::Result<()> {
 /// (en vez de una carpeta "en blanco" sin selección).
 #[cfg(target_os = "windows")]
 pub(super) fn open_selecting(path: &Path) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    // El Explorador separa sus argumentos por comas: sin comillas, una ruta
+    // como `D:\docs,v2\report.csv` abre otra carpeta (la de Documentos). Va
+    // con `raw_arg` para que Rust no vuelva a escapar las comillas; una ruta
+    // de Windows no puede contener `"`.
     std::process::Command::new("explorer")
-        .arg(format!("/select,{}", path.display()))
+        .raw_arg(select_arg(path))
         .spawn()
         .map(|_| ())
+}
+
+/// Argumento `/select,"<ruta>"` del Explorador de Windows.
+#[cfg(any(target_os = "windows", test))]
+fn select_arg(path: &Path) -> String {
+    format!("/select,\"{}\"", path.display())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -91,6 +102,14 @@ pub(super) fn open_selecting(path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn select_arg_quotes_paths_with_commas_and_spaces() {
+        assert_eq!(
+            select_arg(Path::new(r"D:\docs,v2\mi reporte\report.csv")),
+            r#"/select,"D:\docs,v2\mi reporte\report.csv""#
+        );
+    }
 
     #[test]
     fn truncate_path_display_noop_when_short_enough() {
