@@ -148,13 +148,16 @@ El mismo ejecutable funciona en dos modos:
 ./target/release/file-reporter
 ```
 
-1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…" o arrástrala a la ventana.
+1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…", elige una reciente con 🕘 o arrástrala a la ventana. Debajo se ve el final de la ruta, que el campo corta si es larga.
 2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
+
+El resto está en **Opciones**, que aparece plegado al abrir la app con un resumen de lo elegido (p. ej. "Todas las extensiones · omite 7 carpetas · CSV + MD + JSON"):
+
 3. *(Opcional)* Escribe las **extensiones** a incluir. Las sugerencias se suman a lo escrito; pulsarlas otra vez las quita.
 4. *(Opcional)* Revisa las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas, o pulsa la sugerencia "Carpetas de proyectos" para quitarlas o volver a ponerlas.
 5. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
 6. *(Opcional)* Desmarca los **formatos** que no necesites (CSV, Markdown, JSON).
-7. Pulsa **▶ Generar reportes** (o Enter). Al terminar se abre una ventana con el resultado: los reportes (abrir o copiar su ruta), la carpeta de salida y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
+7. Pulsa **▶ Generar reportes** (o Enter, si no estás escribiendo en un campo). Al terminar se abre una ventana con el resultado: los reportes (abrir o copiar su ruta), la carpeta de salida y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
 
 ### ⌨️ Línea de comandos
 
