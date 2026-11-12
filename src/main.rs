@@ -8,11 +8,11 @@ mod models;
 mod reporters;
 mod runner;
 mod scanner;
+mod summary;
 
 use anyhow::Result;
 use clap::Parser;
 use cli::Cli;
-use std::time::Instant;
 
 /// Tamaño de pila para los hilos que recorren el árbol de directorios
 /// (`scanner::build_tree` es recursiva). El valor por defecto de Rust/rayon
@@ -40,79 +40,13 @@ fn main() -> Result<()> {
         return gui::launch();
     }
 
-    // Con argumentos → modo CLI (igual que antes)
-    let parsed = Cli::parse();
-    cli::init_logging(parsed.verbose);
-
-    let input = parsed.path.clone();
-    let output = parsed.output.clone().unwrap_or_else(|| input.clone());
-    let extensions = parsed.normalized_extensions();
-    let exclude_dirs = parsed.excluded_dirs();
-
-    if parsed.dirs_only {
-        println!("📂 Modo: solo estructura de carpetas");
+    // Con argumentos → modo CLI. Los errores se muestran en una línea, con
+    // sus causas (`{:#}` de anyhow), en vez del formato de depuración que
+    // imprime `main` al devolver `Err` ("Error: …" y "Caused by:").
+    if let Err(e) = cli::run(&Cli::parse()) {
+        eprintln!("❌ {e:#}");
+        std::process::exit(1);
     }
-    if !extensions.is_empty() {
-        println!("🎯 Filtrando extensiones: {:?}", extensions);
-    }
-    if !exclude_dirs.is_empty() {
-        println!("🚫 Omitiendo carpetas: {:?}", exclude_dirs);
-    }
-    println!("🔍 Escaneando: {}", input.display());
-
-    let start = Instant::now();
-    let summary = cli::run_with_progress(
-        &runner::RunConfig {
-            input,
-            output,
-            extensions,
-            dirs_only: parsed.dirs_only,
-            exclude_dirs,
-            formats: parsed.formats_or_all(),
-        },
-        parsed.verbose == 0,
-    )?;
-
-    println!("\n✅ Reportes generados correctamente:");
-    for (format, path) in &summary.reports {
-        let label = format!("{}:", format.label());
-        println!("   📄 {label:<9} {}", path.display());
-    }
-    if summary.dirs_only {
-        println!("\n📊 Carpetas procesadas: {}", summary.dirs_count);
-    } else {
-        println!(
-            "\n📊 Archivos procesados: {} · {}",
-            summary.files_count,
-            runner::format_size(summary.total_bytes)
-        );
-        let rows = runner::top_types(&summary.ext_stats, 5);
-        if !rows.is_empty() {
-            println!("\n🗂️  Tipos de archivo (por tamaño):");
-            for r in rows {
-                println!(
-                    "   {:<18} {:>7} arch. · {:>9} · {:>7}",
-                    r.label,
-                    r.count,
-                    runner::format_size(r.bytes),
-                    runner::format_percent(r.bytes, summary.total_bytes)
-                );
-            }
-        }
-    }
-    if let Some(text) = runner::excluded_dirs_text(&summary.excluded_dirs) {
-        println!("🚫 {text}");
-    }
-    if summary.skipped_count > 0 {
-        let hint = if parsed.verbose == 0 {
-            " (usa -v para ver cuáles)"
-        } else {
-            ""
-        };
-        println!("⚠️  {}{hint}", runner::skipped_text(summary.skipped_count));
-    }
-    println!("⏱️  Tiempo: {:.2?}", start.elapsed());
-
     Ok(())
 }
 
