@@ -65,7 +65,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev
 
-      - uses: dtolnay/rust-toolchain@1.95
+      # La versión va como entrada y no en la referencia (`@1.95`): Dependabot
+      # toma esa referencia por una versión de la acción y propone "subirla",
+      # lo que cambiaría la versión mínima que se comprueba.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.95"
 
       - uses: Swatinem/rust-cache@v2
         with:
