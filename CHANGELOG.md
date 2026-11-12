@@ -13,6 +13,7 @@ Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https
 - **Carpetas omitidas por nombre en el resultado:** la ventana de resultado y la salida de la CLI dicen cuántas carpetas se omitieron por nombre y cuáles, p. ej. "3 carpetas omitidas por nombre (.git, build ×2)". Antes una carpeta `build` o `dist` con contenido propio podía quedar fuera del reporte sin aviso ([#47](https://github.com/dbarretol/file-reporter/issues/47)).
 - **GUI: lista de elementos no accesibles:** el aviso "N elementos no accesibles fueron omitidos" se despliega para ver cuáles (hasta 200) y el motivo de cada uno, con un botón "Copiar lista" ([#48](https://github.com/dbarretol/file-reporter/issues/48)).
 - **Progreso con las carpetas revisadas:** el contador de la GUI y de la CLI muestra, además de los archivos encontrados, las carpetas revisadas. Con un filtro de extensiones el escaneo ya no parece colgado mientras no aparecen coincidencias. En la GUI el contador también se ve en la barra de estado ([#49](https://github.com/dbarretol/file-reporter/issues/49)).
+- **GUI: carpetas recientes:** un botón 🕘 junto a "Carpeta a escanear" ofrece las últimas 5 carpetas escaneadas, que se recuerdan entre sesiones. Las que ya no existen no se muestran ([#52](https://github.com/dbarretol/file-reporter/issues/52)).
 
 ### Corregido
 
