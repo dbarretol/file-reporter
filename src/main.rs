@@ -60,17 +60,14 @@ fn main() -> Result<()> {
     println!("🔍 Escaneando: {}", input.display());
 
     let start = Instant::now();
-    let summary = runner::run(
-        &runner::RunConfig {
-            input,
-            output,
-            extensions,
-            dirs_only: parsed.dirs_only,
-            exclude_dirs,
-            formats: parsed.formats_or_all(),
-        },
-        None,
-    )?;
+    let summary = cli::run_with_progress(&runner::RunConfig {
+        input,
+        output,
+        extensions,
+        dirs_only: parsed.dirs_only,
+        exclude_dirs,
+        formats: parsed.formats_or_all(),
+    })?;
 
     println!("\n✅ Reportes generados correctamente:");
     for (format, path) in &summary.reports {

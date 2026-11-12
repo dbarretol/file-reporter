@@ -1,6 +1,11 @@
-use crate::runner::ReportFormat;
+use crate::runner::{self, Progress, ReportFormat, RunConfig, RunSummary};
+use anyhow::Result;
 use clap::Parser;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+use std::time::Duration;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -74,9 +79,79 @@ impl Cli {
     }
 }
 
+/// Cada cuánto se refresca el spinner (giro y contador).
+const SPINNER_TICK: Duration = Duration::from_millis(100);
+
+/// Ejecuta `runner::run` mostrando en stderr un spinner con el contador de
+/// elementos encontrados y el tiempo transcurrido, y después la fase de
+/// escritura de reportes. Usa el mismo `runner::Progress` que la GUI.
+///
+/// Si stderr no es una terminal (salida redirigida, CI…) `indicatif` no
+/// dibuja nada y la ejecución es igual que sin spinner.
+pub fn run_with_progress(cfg: &RunConfig) -> Result<RunSummary> {
+    let bar = ProgressBar::new_spinner();
+    if bar.is_hidden() {
+        return runner::run(cfg, None);
+    }
+    bar.set_style(
+        ProgressStyle::with_template("{spinner} {msg} · {elapsed}")
+            .expect("plantilla de spinner válida"),
+    );
+    bar.enable_steady_tick(SPINNER_TICK);
+
+    let progress = Progress::new();
+    let (done_tx, done_rx) = mpsc::channel::<()>();
+    let result = std::thread::scope(|s| {
+        // Actualiza el mensaje hasta que `runner::run` termina (al soltarse
+        // `done_tx` el canal se cierra y `recv_timeout` deja de esperar).
+        let (bar, watched) = (&bar, progress.clone());
+        s.spawn(move || loop {
+            bar.set_message(progress_message(
+                watched.done.load(Ordering::Relaxed),
+                watched.writing.load(Ordering::Relaxed),
+                cfg.dirs_only,
+            ));
+            if done_rx.recv_timeout(SPINNER_TICK) != Err(mpsc::RecvTimeoutError::Timeout) {
+                break;
+            }
+        });
+        let result = runner::run(cfg, Some(progress.clone()));
+        drop(done_tx);
+        result
+    });
+    bar.finish_and_clear();
+    result
+}
+
+/// Texto del spinner según la fase en curso.
+fn progress_message(found: usize, writing: bool, dirs_only: bool) -> String {
+    let noun = runner::found_noun(dirs_only);
+    if writing {
+        format!("Escribiendo reportes… ({found} {noun})")
+    } else {
+        format!("Escaneando… {found} {noun}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn progress_message_shows_phase_and_noun() {
+        assert_eq!(
+            progress_message(42, false, false),
+            "Escaneando… 42 archivos encontrados"
+        );
+        assert_eq!(
+            progress_message(7, false, true),
+            "Escaneando… 7 carpetas encontradas"
+        );
+        assert_eq!(
+            progress_message(42, true, false),
+            "Escribiendo reportes… (42 archivos encontrados)"
+        );
+    }
 
     fn cli_with(extensions: Vec<&str>) -> Cli {
         Cli {

@@ -175,7 +175,16 @@ pub fn top_types(stats: &[ExtStat], n: usize) -> Vec<TypeRow> {
     rows
 }
 
-/// Reporte de progreso compartido entre el worker y la GUI.
+/// Qué cuenta `Progress::done`, para los textos de progreso de la CLI y la GUI.
+pub fn found_noun(dirs_only: bool) -> &'static str {
+    if dirs_only {
+        "carpetas encontradas"
+    } else {
+        "archivos encontrados"
+    }
+}
+
+/// Progreso compartido entre `run` y quien lo muestra (GUI o spinner de la CLI).
 #[derive(Debug, Default)]
 pub struct Progress {
     /// Archivos (o carpetas, en modo solo carpetas) encontrados hasta ahora.
