@@ -4,13 +4,15 @@ Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https
 
 ## [Sin publicar]
 
-### Cambiado
-
-- **CLI:** el tiempo total se muestra como en la GUI (`<1 s`, `42s`, `3m 05s`) en vez de con el formato interno de Rust (`5.26ms`, `183.4s`) ([#78](https://github.com/dbarretol/file-reporter/issues/78)).
-
 ### Añadido
 
+- **GUI: "No volver a preguntar"** en el diálogo que aparece al volver a generar: los reportes se actualizan sin preguntar. Se puede deshacer en Opciones, con "Preguntar antes de reemplazar reportes anteriores" ([#74](https://github.com/dbarretol/file-reporter/issues/74)).
 - **Sumas SHA256 en cada Release** (`SHA256SUMS.txt`), para comprobar que el ejecutable descargado está íntegro. El README explica cómo hacerlo en Windows y Linux ([#77](https://github.com/dbarretol/file-reporter/issues/77)).
+
+### Cambiado
+
+- **GUI: volver a generar con menos fricción.** El diálogo que aparece si ya hay reportes ofrece "Actualizar reportes" como acción principal (antes "Sobrescribir", en rojo), junto a "Guardar con otro nombre" y "Cancelar", y lista los nombres alternativos completos. La ventana de resultado muestra una vez la carpeta donde se guardaron y, en cada fila, solo el nombre del archivo. Se quitan los emoji que la fuente de la interfaz no dibujaba bien (📂, 📁, 📋) ([#74](https://github.com/dbarretol/file-reporter/issues/74)).
+- **CLI:** el tiempo total se muestra como en la GUI (`<1 s`, `42s`, `3m 05s`) en vez de con el formato interno de Rust (`5.26ms`, `183.4s`) ([#78](https://github.com/dbarretol/file-reporter/issues/78)).
 
 ### Corregido
 
