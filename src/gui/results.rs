@@ -3,7 +3,7 @@
 
 use super::palette::Palette;
 use super::run::RunState;
-use super::util::{open_in_explorer, open_selecting};
+use super::util::{open_in_explorer, open_selecting, truncate_path_display};
 use super::widgets::{panel_title, result_row, RowAction};
 use super::{App, Copied};
 use crate::models::ExtStat;
@@ -138,7 +138,7 @@ impl App {
                 // hay al menos uno: `runner::run` exige un formato).
                 if let RunState::Done { summary, .. } = &self.state {
                     if let Some((_, first)) = summary.reports.first() {
-                        if ui.button("📂  Abrir carpeta de salida").clicked() {
+                        if ui.button("Abrir carpeta de salida").clicked() {
                             open_folder = Some(first.clone());
                         }
                     }
@@ -227,12 +227,30 @@ impl App {
                     }
                 }
                 ui.add_space(8.0);
-                for (format, path) in &s.reports {
-                    let is_copied = copied == Some(&Copied::Path(path.clone()));
-                    if let Some(a) = result_row(ui, format.label(), path, is_copied) {
-                        *action = Some(ResultAction::Row(a, path.clone()));
-                    }
+                // La carpeta una sola vez; en cada fila, solo el archivo.
+                if let Some(dir) = s.reports.first().and_then(|(_, p)| p.parent()) {
+                    let dir = dir.display().to_string();
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Guardados en {}",
+                            truncate_path_display(&dir, 70)
+                        ))
+                        .color(palette.muted),
+                    )
+                    .on_hover_text(dir);
                 }
+                egui::Grid::new("report_rows")
+                    .num_columns(3)
+                    .spacing([16.0, 4.0])
+                    .show(ui, |ui| {
+                        for (format, path) in &s.reports {
+                            let is_copied = copied == Some(&Copied::Path(path.clone()));
+                            if let Some(a) = result_row(ui, format.label(), path, is_copied) {
+                                *action = Some(ResultAction::Row(a, path.clone()));
+                            }
+                            ui.end_row();
+                        }
+                    });
                 if !s.ext_stats.is_empty() {
                     ui.add_space(6.0);
                     render_type_stats(ui, &palette, &s.ext_stats, s.total_bytes);
@@ -354,7 +372,7 @@ const TOP_TYPES: usize = 8;
 /// Tabla plegable con los tipos de archivo que más ocupan: cantidad,
 /// tamaño y una barra proporcional al porcentaje del tamaño total.
 fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], total: u64) {
-    egui::CollapsingHeader::new(format!("📁 Tipos de archivo ({})", stats.len()))
+    egui::CollapsingHeader::new(format!("Tipos de archivo ({})", stats.len()))
         .default_open(true)
         .show(ui, |ui| {
             egui::Grid::new("type_stats")

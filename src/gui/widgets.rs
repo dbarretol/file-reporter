@@ -23,7 +23,7 @@ pub(super) fn folder_row(
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
-                .add_enabled(enabled, egui::Button::new("📂  Examinar…"))
+                .add_enabled(enabled, egui::Button::new("Examinar…"))
                 .clicked()
             {
                 if let Some(path) = pick() {
@@ -66,9 +66,10 @@ pub(super) enum RowAction {
     Copy,
 }
 
-/// Fila de resultado: botones "Abrir" y "Copiar ruta", etiqueta y ruta
-/// (truncada, completa en el tooltip). `copied` muestra la confirmación de
-/// que esa ruta acaba de copiarse.
+/// Fila de resultado, en tres celdas de un `Grid`: formato, nombre del
+/// archivo (la ruta completa, en el tooltip) y los botones "Abrir" y
+/// "Copiar ruta". `copied` muestra la confirmación de que esa ruta acaba de
+/// copiarse. Quien llama cierra la fila (`end_row`).
 pub(super) fn result_row(
     ui: &mut egui::Ui,
     label: &str,
@@ -76,7 +77,14 @@ pub(super) fn result_row(
     copied: bool,
 ) -> Option<RowAction> {
     let path_str = path.display().to_string();
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path_str.clone());
     let mut action = None;
+    ui.label(egui::RichText::new(label).strong().size(12.0));
+    ui.label(egui::RichText::new(&file_name).monospace().size(12.0))
+        .on_hover_text(&path_str);
     ui.horizontal(|ui| {
         if ui
             .small_button("Abrir")
@@ -93,13 +101,6 @@ pub(super) fn result_row(
         {
             action = Some(RowAction::Copy);
         }
-        ui.label(egui::RichText::new(format!("{label}:")).strong().size(12.0));
-        ui.label(
-            egui::RichText::new(truncate_path_display(&path_str, 60))
-                .monospace()
-                .size(11.0),
-        )
-        .on_hover_text(&path_str);
     });
     action
 }
