@@ -99,6 +99,25 @@ En [**Releases**](https://github.com/dbarretol/file-reporter/releases/latest) ha
 - **Windows:** abre el `.exe` con doble clic. Como el ejecutable no está firmado, SmartScreen puede avisar la primera vez: *Más información → Ejecutar de todas formas*.
 - **Linux:** descomprime el archivo y ejecuta `./file-reporter`. La interfaz gráfica necesita GTK 3, que traen la mayoría de escritorios.
 
+<details>
+<summary>Comprobar que la descarga está íntegra (opcional)</summary>
+
+<br>
+
+Cada *Release* incluye `SHA256SUMS.txt` con la suma SHA256 de cada ejecutable. Descárgalo junto al ejecutable y compara:
+
+```powershell
+# Windows (PowerShell): debe coincidir con el valor de SHA256SUMS.txt (sale en mayúsculas)
+(Get-FileHash .\file-reporter-vX.Y.Z-windows-x64.exe -Algorithm SHA256).Hash
+```
+
+```bash
+# Linux: comprueba los archivos de la lista que estén en la carpeta
+sha256sum -c --ignore-missing SHA256SUMS.txt
+```
+
+</details>
+
 ### Compilar desde el código fuente
 
 Requisitos:
@@ -435,7 +454,7 @@ cargo run --profile fast                    # probar la app: recompila en segund
 
 Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)). Cubren el escaneo, los filtros, la exclusión de carpetas, el modo solo carpetas, la cancelación, la escritura segura y los tres formatos de salida, además de la CLI como programa (opciones, códigos de salida y mensajes de error). En Windows también crean *junctions* para probar el manejo de enlaces sin permisos de administrador.
 
-Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu. Al subir un tag `vX.Y.Z`, [otro workflow](.github/workflows/release.yml) compila los ejecutables y prepara un borrador de *Release* con las notas de [`CHANGELOG.md`](CHANGELOG.md).
+Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu. Al subir un tag `vX.Y.Z`, [otro workflow](.github/workflows/release.yml) compila los ejecutables y prepara un borrador de *Release* con sus sumas SHA256 y las notas de [`CHANGELOG.md`](CHANGELOG.md). [Dependabot](.github/dependabot.yml) propone cada mes las actualizaciones de dependencias y de Actions.
 
 ---
 
