@@ -390,7 +390,7 @@ impl App {
                             // puede quedar fuera de la vista en ventanas
                             // bajas, la barra de estado siempre se ve.
                             RunState::Running(run) => {
-                                let status = crate::runner::scan_status(
+                                let status = crate::summary::scan_status(
                                     run.found(),
                                     run.dirs_scanned(),
                                     run.dirs_only,
