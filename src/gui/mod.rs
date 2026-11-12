@@ -84,10 +84,10 @@ const COPIED_TTL: Duration = Duration::from_secs(2);
 /// antes de desaparecer solo, si no lo reemplaza antes una acción nueva.
 const UI_ERROR_TTL: Duration = Duration::from_secs(5);
 
-/// Todos los formatos marcados (valor por defecto y al pulsar "Limpiar").
+/// Todos los formatos marcados (valor por defecto y al pulsar "Restablecer").
 const ALL_FORMATS: [bool; 3] = [true; 3];
 
-/// Carpetas a omitir de partida (valor por defecto y al pulsar "Limpiar"):
+/// Carpetas a omitir de partida (valor por defecto y al pulsar "Restablecer"):
 /// las comunes de proyectos de código, que casi nunca interesan en un
 /// inventario. La CLI, en cambio, no omite nada si no se le pide.
 fn default_exclude_dirs() -> String {
@@ -488,6 +488,7 @@ impl App {
                             self.render_actions(ui);
                             ui.add_space(8.0);
                             self.render_progress(ui);
+                            self.render_drop_zone(ui);
                             ui.add_space(12.0);
                         });
                     });

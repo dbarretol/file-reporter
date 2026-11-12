@@ -1,5 +1,5 @@
-//! Lo que aparece por encima del formulario: el diálogo de sobrescritura y
-//! el aviso al arrastrar una carpeta sobre la ventana.
+//! Arrastrar y soltar (zona para soltar mientras no hay carpeta y aviso al
+//! arrastrar sobre la ventana) y el diálogo que aparece al volver a generar.
 
 use super::palette::Palette;
 use super::util::{dropped_path_to_input_dir, truncate_path_display};
@@ -46,6 +46,60 @@ impl App {
             egui::FontId::proportional(24.0),
             egui::Color32::WHITE,
         );
+    }
+
+    /// Zona para soltar, bajo el formulario, mientras no hay carpeta elegida:
+    /// hace visible que se puede arrastrar una carpeta, y un clic abre el
+    /// selector como "Examinar…".
+    pub(super) fn render_drop_zone(&mut self, ui: &mut egui::Ui) {
+        if !self.input_path.trim().is_empty() || self.is_busy() {
+            return;
+        }
+        let palette = Palette::of(ui);
+        ui.add_space(8.0);
+        let size = egui::vec2(ui.available_width(), 150.0);
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+        let stroke_color = if response.hovered() {
+            palette.accent
+        } else {
+            palette.muted.gamma_multiply(0.6)
+        };
+        let corners = [
+            rect.left_top(),
+            rect.right_top(),
+            rect.right_bottom(),
+            rect.left_bottom(),
+            rect.left_top(),
+        ];
+        let painter = ui.painter();
+        painter.extend(egui::Shape::dashed_line(
+            &corners,
+            egui::Stroke::new(1.5, stroke_color),
+            8.0,
+            6.0,
+        ));
+        painter.text(
+            rect.center() - egui::vec2(0.0, 12.0),
+            egui::Align2::CENTER_CENTER,
+            "Arrastra aquí la carpeta que quieres inventariar",
+            egui::FontId::proportional(16.0),
+            ui.visuals().text_color(),
+        );
+        painter.text(
+            rect.center() + egui::vec2(0.0, 14.0),
+            egui::Align2::CENTER_CENTER,
+            "o haz clic para elegirla",
+            egui::FontId::proportional(12.0),
+            palette.muted,
+        );
+        if response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                self.input_path = path.display().to_string();
+            }
+        }
     }
 
     /// ─── Diálogo: confirmar sobrescritura de reportes existentes ──
