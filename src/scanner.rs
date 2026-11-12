@@ -604,6 +604,30 @@ mod tests {
     }
 
     #[test]
+    fn build_tree_filter_matches_like_file_extension() {
+        // Mismas reglas que `file_extension`: lo que va tras el último punto,
+        // sin distinguir mayúsculas (también fuera de ASCII), y nada para
+        // `.gitignore` ni para nombres sin punto.
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["foto.ÑÁ", "foo.tar.GZ", ".gitignore", "gz", "x.gz.bak"] {
+            fs::write(dir.path().join(name), "x").unwrap();
+        }
+        let filters = vec!["ñá".to_string(), "gz".to_string(), "gitignore".to_string()];
+        let tree = build_tree(
+            dir.path(),
+            &ScanOptions {
+                extensions: &filters,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let mut names: Vec<String> = node_names(&tree);
+        names.sort();
+        assert_eq!(names, vec!["foo.tar.GZ".to_string(), "foto.ÑÁ".to_string()]);
+    }
+
+    #[test]
     fn build_tree_drops_empty_dirs_after_filtering() {
         let dir = tempfile::tempdir().unwrap();
         let sub = dir.path().join("only_jpgs");

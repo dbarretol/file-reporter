@@ -12,6 +12,11 @@ Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https
 
 - **GUI: formulario más simple:** arriba solo las carpetas a escanear y de salida; extensiones, carpetas a omitir, "Solo carpetas" y formatos pasan a "Opciones", que aparece plegado al abrir la app con un resumen de una línea. Debajo de cada carpeta se ve el final de la ruta, que el campo corta si es larga. Las etiquetas pierden los emoji, poco legibles a ese tamaño ([#51](https://github.com/dbarretol/file-reporter/issues/51)).
 - **GUI:** Enter ya no lanza el escaneo mientras se escribe en un campo; los escaneos de menos de un segundo muestran "<1 s" en vez de "0s"; la barra de estado muestra la versión; el diálogo de sobrescritura es un modal como la ventana de resultado, que se cierra con Esc o con un clic fuera ([#51](https://github.com/dbarretol/file-reporter/issues/51)).
+- **Menos memoria al escribir `report.md`:** se escribe a medida que se recorre el árbol, en vez de armarlo entero en memoria. Con `C:\Windows` (~119 000 archivos) el pico baja de ~210 MB a ~157 MB; el contenido no cambia ([#54](https://github.com/dbarretol/file-reporter/issues/54)).
+
+### Corregido
+
+- **GUI: la ventana ya no se congela con rutas de red lentas.** La carpeta escrita se comprueba en otro hilo cuando lleva 300 ms sin cambiar; mientras tanto, el botón indica "Comprobando…". Antes, una ruta de red que no responde dejaba la ventana como "No responde" hasta ~27 s ([#54](https://github.com/dbarretol/file-reporter/issues/54)).
 
 ## [0.5.0] - 2026-11-12
 
