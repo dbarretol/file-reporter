@@ -2,6 +2,12 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Seguridad
+
+- **Dependencias actualizadas** a sus últimos parches compatibles (clap 4.6.7, serde_json 1.0.154, anyhow 1.0.104, chrono 0.4.45 y otras). Quedan resueltos los avisos RUSTSEC-2026-0190 (anyhow), RUSTSEC-2026-0204 (crossbeam-epoch), RUSTSEC-2026-0186 (memmap2), RUSTSEC-2026-0194 y RUSTSEC-2026-0195 (quick-xml) y RUSTSEC-2026-0486 (rustix). Ninguno afectaba en la práctica: la app no usa las funciones afectadas ([#73](https://github.com/dbarretol/file-reporter/issues/73)).
+
 ## [0.6.0] - 2026-11-12
 
 ### Añadido
@@ -101,6 +107,7 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
+[Sin publicar]: https://github.com/dbarretol/file-reporter/compare/v0.6.0...HEAD
 [0.6.0]: https://github.com/dbarretol/file-reporter/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dbarretol/file-reporter/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/dbarretol/file-reporter/compare/v0.4.0...v0.4.1
