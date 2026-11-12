@@ -424,7 +424,7 @@ pub fn try_for_each_record(
             f(FileRecord {
                 name: stem,
                 extension: extension.clone(),
-                size_mb: (size_mb * 1000.0).round() / 1000.0, // 3 decimales
+                size_mb: decimal_comma(*size_mb),
                 size_bytes: *size_bytes,
                 // Formato DD/MM/AAAA (solo fecha, sin hora) para Excel
                 created: created
@@ -441,6 +441,11 @@ pub fn try_for_each_record(
             })
         }
     }
+}
+
+/// `value` con 3 decimales y coma decimal (`1,431`), para `FileRecord::size_mb`.
+fn decimal_comma(value: f64) -> String {
+    format!("{value:.3}").replace('.', ",")
 }
 
 /// Todas las filas del CSV en una lista (solo para tests).
@@ -465,6 +470,13 @@ mod tests {
             }
             Node::File { .. } => vec![],
         }
+    }
+
+    #[test]
+    fn decimal_comma_uses_three_decimals_and_a_comma() {
+        assert_eq!(decimal_comma(1500000.0 / (1024.0 * 1024.0)), "1,431");
+        assert_eq!(decimal_comma(0.0), "0,000");
+        assert_eq!(decimal_comma(2048.5), "2048,500");
     }
 
     #[test]

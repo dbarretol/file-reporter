@@ -215,7 +215,7 @@ Cada ejecución crea en la carpeta de salida estos archivos (los tres por defect
 | `report.md` | Árbol de carpetas y archivos estilo `tree`, y tabla de tipos de archivo | Documentación, READMEs |
 | `report.json` | Árbol completo con metadatos | Scripts e integraciones |
 
-En **modo solo carpetas**, `report.md` y `report.json` contienen únicamente directorios y `report.csv` queda solo con la cabecera.
+En **modo solo carpetas**, `report.md` y `report.json` contienen únicamente directorios y `report.csv` queda solo con la cabecera (lo mismo si el filtro de extensiones no encuentra nada).
 
 <details>
 <summary><b>📊 report.csv</b>: columnas</summary>
@@ -228,7 +228,7 @@ UTF-8 con BOM y separador `;`, para que Excel lo abra correctamente sin configur
 |---|---|
 | `name` | Nombre del archivo, sin extensión |
 | `extension` | Extensión, sin punto |
-| `size_mb` | Tamaño en MB (hasta 3 decimales) |
+| `size_mb` | Tamaño en MB con 3 decimales y coma decimal (`1,270`), como lo espera Excel en español |
 | `size_bytes` | Tamaño exacto en bytes |
 | `created` / `modified` | Fechas en `DD/MM/AAAA` (formato que Excel reconoce directamente) |
 | `created_iso` / `modified_iso` | Fecha y hora en ISO-8601, ordenables como texto |
@@ -237,10 +237,10 @@ UTF-8 con BOM y separador `;`, para que Excel lo abra correctamente sin configur
 
 ```text
 name;extension;size_mb;size_bytes;created;modified;created_iso;modified_iso;directory;full_path
-manual;pdf;1.27;1331200;23/10/2026;23/10/2026;2026-10-23T04:42:45.034591400+00:00;...;C:\Demo\Proyecto\docs;C:\Demo\Proyecto\docs\manual.pdf
+manual;pdf;1,270;1331200;23/10/2026;23/10/2026;2026-10-23T04:42:45.034591400+00:00;...;C:\Demo\Proyecto\docs;C:\Demo\Proyecto\docs\manual.pdf
 ```
 
-Si un nombre o ruta empieza por `=`, `+`, `-`, `@`, tabulador o retorno de carro, se le antepone un apóstrofo para que Excel no lo ejecute como fórmula.
+Si un nombre, extensión o ruta empieza por `=`, `+`, `-`, `@`, tabulador o retorno de carro, se le antepone un apóstrofo para que Excel no lo ejecute como fórmula.
 
 </details>
 
