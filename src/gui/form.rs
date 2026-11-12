@@ -134,6 +134,66 @@ impl PathCheck {
     }
 }
 
+/// Qué carpetas recientes siguen existiendo. Como `PathCheck`, consulta el
+/// disco en otro hilo: una carpeta de red caída entre las recientes podía
+/// congelar la ventana mientras el menú 🕘 estaba abierto, porque se
+/// comprobaban todas en cada frame. Se comprueba al arrancar y cada vez que
+/// cambia la lista; mientras tanto se muestran todas, y la que se elija la
+/// valida igualmente `PathCheck`.
+#[derive(Default)]
+pub(super) struct RecentCheck {
+    /// Última lista comprobada y, para cada carpeta, si existe.
+    checked: Vec<(String, bool)>,
+    /// Comprobación en curso: lista pedida y canal del resultado.
+    running: Option<(Vec<String>, Receiver<Vec<bool>>)>,
+}
+
+impl RecentCheck {
+    /// Se llama en cada frame con la lista actual; lanza una comprobación
+    /// si cambió desde la última.
+    pub fn refresh(&mut self, recent: &[String], ctx: &egui::Context) {
+        if let Some((asked, rx)) = &self.running {
+            match rx.try_recv() {
+                Ok(exists) => {
+                    self.checked = asked.iter().cloned().zip(exists).collect();
+                    self.running = None;
+                }
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint_after(PATH_CHECK_POLL);
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => self.running = None,
+            }
+        }
+        let unchanged = self.checked.len() == recent.len()
+            && self.checked.iter().zip(recent).all(|((p, _), r)| p == r);
+        if unchanged || recent.is_empty() {
+            return;
+        }
+        let asked = recent.to_vec();
+        let paths = asked.clone();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(
+                paths
+                    .iter()
+                    .map(|p| std::path::Path::new(p).is_dir())
+                    .collect(),
+            );
+        });
+        self.running = Some((asked, rx));
+        ctx.request_repaint_after(PATH_CHECK_POLL);
+    }
+
+    /// Carpetas que ofrecer: todas menos las que se sabe que ya no existen.
+    pub fn visible<'a>(&self, recent: &'a [String]) -> Vec<&'a String> {
+        recent
+            .iter()
+            .filter(|p| !self.checked.iter().any(|(c, exists)| c == *p && !exists))
+            .collect()
+    }
+}
+
 /// Qué hay en disco en `path` (no vacío).
 fn disk_status(path: &str) -> PathStatus {
     let path = std::path::Path::new(path);
@@ -163,12 +223,13 @@ impl App {
                         .strong()
                         .size(13.0),
                 );
+                let recent = self.recent_check.visible(&self.recent_inputs);
                 folder_row(
                     ui,
                     &mut self.input_path,
                     enabled,
                     "Selecciona la carpeta o arrástrala a la ventana…",
-                    &self.recent_inputs,
+                    &recent,
                     || rfd::FileDialog::new().pick_folder(),
                 );
                 match self.input_check.status() {
@@ -617,6 +678,27 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(check.status(), PathStatus::Dir);
+    }
+
+    #[test]
+    fn recent_check_hides_missing_folders_after_checking() {
+        let ctx = egui::Context::default();
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().display().to_string();
+        let missing = dir.path().join("no_existe").display().to_string();
+        let recent = vec![existing.clone(), missing];
+        let mut check = RecentCheck::default();
+
+        // Antes de que llegue la respuesta, se ofrecen todas.
+        check.refresh(&recent, &ctx);
+        assert_eq!(check.visible(&recent).len(), 2);
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while check.running.is_some() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+            check.refresh(&recent, &ctx);
+        }
+        assert_eq!(check.visible(&recent), vec![&existing]);
     }
 
     fn app_with(extensions: &str, exclude: &str, dirs_only: bool, formats: [bool; 3]) -> App {
