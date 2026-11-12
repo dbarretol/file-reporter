@@ -56,15 +56,7 @@ impl ActiveRun {
 
     /// Qué se cuenta en esta corrida, para los textos de progreso.
     pub fn noun(&self) -> &'static str {
-        found_noun(self.dirs_only)
-    }
-}
-
-pub(super) fn found_noun(dirs_only: bool) -> &'static str {
-    if dirs_only {
-        "carpetas encontradas"
-    } else {
-        "archivos encontrados"
+        runner::found_noun(self.dirs_only)
     }
 }
 

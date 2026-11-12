@@ -42,6 +42,7 @@ fn main() -> Result<()> {
 
     // Con argumentos → modo CLI (igual que antes)
     let parsed = Cli::parse();
+    cli::init_logging(parsed.verbose);
 
     let input = parsed.path.clone();
     let output = parsed.output.clone().unwrap_or_else(|| input.clone());
@@ -60,7 +61,7 @@ fn main() -> Result<()> {
     println!("🔍 Escaneando: {}", input.display());
 
     let start = Instant::now();
-    let summary = runner::run(
+    let summary = cli::run_with_progress(
         &runner::RunConfig {
             input,
             output,
@@ -69,7 +70,7 @@ fn main() -> Result<()> {
             exclude_dirs,
             formats: parsed.formats_or_all(),
         },
-        None,
+        parsed.verbose == 0,
     )?;
 
     println!("\n✅ Reportes generados correctamente:");
@@ -100,8 +101,13 @@ fn main() -> Result<()> {
         }
     }
     if summary.skipped_count > 0 {
+        let hint = if parsed.verbose == 0 {
+            " (usa -v para ver cuáles)"
+        } else {
+            ""
+        };
         println!(
-            "⚠️  {} elementos no accesibles fueron omitidos",
+            "⚠️  {} elementos no accesibles fueron omitidos{hint}",
             summary.skipped_count
         );
     }
