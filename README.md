@@ -92,15 +92,26 @@ C:\Demo\Proyecto
 
 ## 📦 Instalación
 
-### Requisitos
+### Descargar el ejecutable
+
+En [**Releases**](https://github.com/dbarretol/file-reporter/releases/latest) hay ejecutables listos para usar, sin instalar nada más:
+
+| Sistema | Archivo |
+|---|---|
+| Windows (64 bits) | `file-reporter-vX.Y.Z-windows-x64.exe` |
+| Linux (64 bits) | `file-reporter-vX.Y.Z-linux-x64.tar.gz` |
+
+En Windows basta con abrir el `.exe` (doble clic para la interfaz gráfica). Como el ejecutable no está firmado, SmartScreen puede avisar la primera vez: *Más información → Ejecutar de todas formas*. En Linux, descomprime el archivo y ejecuta `./file-reporter`; la interfaz gráfica necesita GTK 3, que traen la mayoría de escritorios.
+
+### Compilar desde el código fuente
+
+Requisitos:
 
 - [Rust](https://rustup.rs/) 1.95 o superior (toolchain estable).
 - **Solo en Linux:** dependencias del sistema para la GUI y los diálogos nativos:
   ```bash
   sudo apt install libgtk-3-dev libxkbcommon-dev libwayland-dev
   ```
-
-### Compilar desde el código fuente
 
 ```bash
 git clone https://github.com/dbarretol/file-reporter.git
@@ -363,13 +374,13 @@ cargo run --profile fast            # probar la app: recompila en segundos (sin 
 
 Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)) y cubren escaneo, filtros, exclusión de carpetas, modo solo carpetas, cancelación, estadísticas por tipo, los tres formatos de salida y la protección del CSV. En Windows también crean *junctions* para probar el manejo de enlaces sin necesidad de permisos de administrador.
 
-Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu.
+Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu. Al subir un tag `vX.Y.Z`, [otro workflow](.github/workflows/release.yml) compila los ejecutables y prepara un borrador de *Release* con las notas de [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
 ## 🧭 Hoja de ruta
 
-- [ ] Binarios precompilados en *Releases* e instalador `.msi` ([#15](https://github.com/dbarretol/file-reporter/issues/15)).
+- [ ] Instalador `.msi` para Windows ([#15](https://github.com/dbarretol/file-reporter/issues/15)).
 - [ ] Barra de progreso en la línea de comandos ([#7](https://github.com/dbarretol/file-reporter/issues/7)).
 - [ ] Registro de las rutas omitidas con `tracing` ([#8](https://github.com/dbarretol/file-reporter/issues/8)).
 - [ ] Vista previa del árbol antes de exportar ([#13](https://github.com/dbarretol/file-reporter/issues/13)).
