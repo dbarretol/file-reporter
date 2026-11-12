@@ -301,6 +301,7 @@ CLI y GUI comparten exactamente la misma lógica; solo cambia la forma de recibi
 ```
 
 ```text
+build.rs             # Windows: incrusta el icono y la versión en el .exe
 src/
 ├── main.rs          # Punto de entrada: decide entre CLI y GUI
 ├── cli.rs           # Argumentos de línea de comandos (clap)
@@ -311,6 +312,7 @@ src/
 │   ├── results.rs   # Progreso y ventana de resultado
 │   ├── dialogs.rs   # Diálogo de sobrescritura y arrastrar y soltar
 │   └── …            # widgets, paleta de colores, utilidades
+├── icon.rs          # Icono de la app, dibujado por código (sin imágenes)
 ├── runner.rs        # Flujo común: escanear → escribir reportes
 ├── scanner.rs       # Recorrido paralelo del directorio
 ├── models.rs        # Node (árbol), FileRecord (fila del CSV) y ExtStat (tipos)
@@ -343,7 +345,8 @@ src/
 [`serde`](https://crates.io/crates/serde) + [`serde_json`](https://crates.io/crates/serde_json) ·
 [`csv`](https://crates.io/crates/csv) ·
 [`chrono`](https://crates.io/crates/chrono) ·
-[`anyhow`](https://crates.io/crates/anyhow)
+[`anyhow`](https://crates.io/crates/anyhow) ·
+[`winresource`](https://crates.io/crates/winresource) (icono del `.exe`)
 
 ---
 
@@ -366,7 +369,6 @@ Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.githu
 
 ## 🧭 Hoja de ruta
 
-- [ ] Icono propio para el ejecutable y la ventana ([#6](https://github.com/dbarretol/file-reporter/issues/6)).
 - [ ] Binarios precompilados en *Releases* e instalador `.msi` ([#15](https://github.com/dbarretol/file-reporter/issues/15)).
 - [ ] Barra de progreso en la línea de comandos ([#7](https://github.com/dbarretol/file-reporter/issues/7)).
 - [ ] Registro de las rutas omitidas con `tracing` ([#8](https://github.com/dbarretol/file-reporter/issues/8)).
