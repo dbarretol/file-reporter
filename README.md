@@ -263,7 +263,7 @@ Cada ejecución crea en la carpeta de salida los reportes elegidos (los tres por
 | `report.md` | Árbol de carpetas y archivos estilo `tree`, y tabla de tipos de archivo | Documentación, READMEs |
 | `report.json` | Árbol completo con los datos de cada archivo | Scripts e integraciones |
 
-- Los reportes de ejecuciones anteriores que haya en la carpeta escaneada no se incluyen en el nuevo reporte.
+- Los reportes de ejecuciones anteriores que haya en la carpeta escaneada o en la de salida (directamente en ellas, no en sus subcarpetas) no se incluyen en el nuevo reporte, aunque la salida sea otra carpeta.
 - En **modo solo carpetas**, `report.md` y `report.json` contienen solo directorios y `report.csv` queda solo con la cabecera (lo mismo si el filtro de extensiones no encuentra nada).
 
 <details>

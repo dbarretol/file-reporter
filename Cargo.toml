@@ -1,6 +1,6 @@
 [package]
 name = "file-reporter"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 # Mínimo que exigen egui/eframe 0.37.
 rust-version = "1.95"
