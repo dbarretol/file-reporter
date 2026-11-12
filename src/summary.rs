@@ -121,6 +121,26 @@ pub fn skipped_text(count: usize) -> String {
     }
 }
 
+/// Duración para mostrar al usuario, igual en la CLI y en la GUI: `<1 s`,
+/// `42s`, `3m 05s` o `1h 02m 03s`.
+pub fn fmt_seconds(s: f32) -> String {
+    // "0s" en un escaneo rápido parecía un error.
+    if s < 1.0 {
+        return "<1 s".to_string();
+    }
+    let s = s as u64;
+    let h = s / 3600;
+    let m = (s % 3600) / 60;
+    let sec = s % 60;
+    if h > 0 {
+        format!("{h}h {m:02}m {sec:02}s")
+    } else if m > 0 {
+        format!("{m}m {sec:02}s")
+    } else {
+        format!("{sec}s")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,5 +226,17 @@ mod tests {
     fn skipped_text_agrees_in_number() {
         assert_eq!(skipped_text(1), "1 elemento no accesible fue omitido");
         assert_eq!(skipped_text(4), "4 elementos no accesibles fueron omitidos");
+    }
+
+    #[test]
+    fn fmt_seconds_boundaries() {
+        assert_eq!(fmt_seconds(0.0), "<1 s");
+        assert_eq!(fmt_seconds(0.4), "<1 s");
+        assert_eq!(fmt_seconds(1.0), "1s");
+        assert_eq!(fmt_seconds(59.0), "59s");
+        assert_eq!(fmt_seconds(60.0), "1m 00s");
+        assert_eq!(fmt_seconds(3599.0), "59m 59s");
+        assert_eq!(fmt_seconds(3600.0), "1h 00m 00s");
+        assert_eq!(fmt_seconds(3661.0), "1h 01m 01s");
     }
 }

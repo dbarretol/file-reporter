@@ -70,7 +70,7 @@ pub(super) struct PendingRun {
     /// Reportes existentes que pisaría (calculados una sola vez).
     pub existing: Vec<PathBuf>,
     /// Nombre libre para "Guardar con otro nombre" (ver
-    /// `runner::auto_report_name`), calculado al abrir el diálogo.
+    /// `naming::auto_report_name`), calculado al abrir el diálogo.
     pub alt_name: String,
 }
 
@@ -118,7 +118,7 @@ impl App {
             dirs_only: self.dirs_only,
             exclude_dirs: runner::parse_dir_names([self.exclude_dirs.as_str()]),
             formats: self.selected_formats(),
-            report_name: runner::DEFAULT_REPORT_NAME.to_string(),
+            report_name: crate::naming::DEFAULT_REPORT_NAME.to_string(),
         }
     }
 
@@ -138,7 +138,8 @@ impl App {
             self.start_run(cfg);
         } else {
             let today = chrono::Local::now().date_naive();
-            let alt_name = runner::auto_report_name(&cfg.input, &cfg.output, &cfg.formats, today);
+            let alt_name =
+                crate::naming::auto_report_name(&cfg.input, &cfg.output, &cfg.formats, today);
             self.pending_confirm = Some(PendingRun {
                 cfg,
                 existing,
