@@ -2,7 +2,7 @@
 //! resumen de una línea en la fila de botones.
 
 use super::palette::Palette;
-use super::run::{found_noun, RunState};
+use super::run::RunState;
 use super::util::{fmt_seconds, open_in_explorer, open_selecting};
 use super::widgets::{panel_title, result_row, RowAction};
 use super::App;
@@ -244,7 +244,7 @@ impl App {
             } => {
                 // Neutral, no rojo: cancelar no es un error del programa,
                 // es una acción deliberada del usuario.
-                let noun = found_noun(*dirs_only);
+                let noun = crate::runner::found_noun(*dirs_only);
                 let elapsed = fmt_seconds(elapsed.as_secs_f32());
                 panel_title(ui, palette.warning, "⏹", "Escaneo cancelado");
                 ui.add_space(4.0);

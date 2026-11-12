@@ -2,6 +2,12 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Añadido
+
+- **Progreso en la línea de comandos:** mientras escanea, la CLI muestra cuántos archivos (o carpetas) lleva encontrados y el tiempo transcurrido, y después que está escribiendo los reportes. No aparece si la salida se redirige ([#7](https://github.com/dbarretol/file-reporter/issues/7)).
+
 ## [0.3.0] - 2026-11-11
 
 ### Añadido
@@ -48,5 +54,6 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
+[Sin publicar]: https://github.com/dbarretol/file-reporter/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/dbarretol/file-reporter/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dbarretol/file-reporter/releases/tag/v0.2.0
