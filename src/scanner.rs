@@ -1,6 +1,6 @@
 use crate::models::{ExtStat, FileRecord, Node};
 use anyhow::{bail, Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, TimeZone};
 use rayon::prelude::*;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -291,8 +291,11 @@ fn file_node(name: String, path: PathBuf, metadata: &fs::Metadata) -> Node {
         size_mb: size_bytes as f64 / (1024.0 * 1024.0),
         size_bytes,
         extension,
-        created: metadata.created().ok().map(DateTime::<Utc>::from),
-        modified: metadata.modified().ok().map(DateTime::<Utc>::from),
+        // En hora local: en UTC, un archivo modificado por la noche en
+        // América (p. ej. a las 21:30 en UTC-5) salía con la fecha del día
+        // siguiente.
+        created: metadata.created().ok().map(DateTime::<Local>::from),
+        modified: metadata.modified().ok().map(DateTime::<Local>::from),
     }
 }
 
@@ -519,26 +522,34 @@ pub fn try_for_each_record(
                 .map(|p| p.display().to_string())
                 .unwrap_or_default();
 
+            let (created, created_iso) = date_columns(created.as_ref());
+            let (modified, modified_iso) = date_columns(modified.as_ref());
             f(FileRecord {
                 name: stem,
                 extension: extension.clone(),
                 size_mb: decimal_comma(*size_mb),
                 size_bytes: *size_bytes,
-                // Formato DD/MM/AAAA (solo fecha, sin hora) para Excel
-                created: created
-                    .map(|d| d.format("%d/%m/%Y").to_string())
-                    .unwrap_or_default(),
-                modified: modified
-                    .map(|d| d.format("%d/%m/%Y").to_string())
-                    .unwrap_or_default(),
-                // ISO-8601 completo (fecha + hora) para ordenar/procesar
-                created_iso: created.map(|d| d.to_rfc3339()).unwrap_or_default(),
-                modified_iso: modified.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                created,
+                modified,
+                created_iso,
+                modified_iso,
                 directory: dir,
                 full_path: path.display().to_string(),
             })
         }
     }
+}
+
+/// Columnas de fecha del CSV en la zona horaria de `date`: `DD/MM/AAAA`
+/// (solo la fecha, para Excel) e ISO-8601 con hora y desfase (para ordenar
+/// y procesar). Vacías si el sistema no da la fecha. Genérica en la zona
+/// para poder probarla con un desfase fijo, sin depender del equipo.
+fn date_columns<Tz: TimeZone>(date: Option<&DateTime<Tz>>) -> (String, String)
+where
+    Tz::Offset: std::fmt::Display,
+{
+    date.map(|d| (d.format("%d/%m/%Y").to_string(), d.to_rfc3339()))
+        .unwrap_or_default()
 }
 
 /// `value` con 3 decimales y coma decimal (`1,431`), para `FileRecord::size_mb`.
@@ -568,6 +579,24 @@ mod tests {
             }
             Node::File { .. } => vec![],
         }
+    }
+
+    #[test]
+    fn date_columns_use_the_calendar_of_the_time_zone() {
+        // 02:30 UTC del 12/11 son las 21:30 del 11/11 en UTC-5: el CSV debe
+        // decir 11/11, la fecha que ve el usuario en el explorador.
+        let utc = chrono::Utc
+            .with_ymd_and_hms(2026, 11, 12, 2, 30, 0)
+            .unwrap();
+        let lima = chrono::FixedOffset::west_opt(5 * 3600).unwrap();
+        assert_eq!(
+            date_columns(Some(&utc.with_timezone(&lima))),
+            (
+                "11/11/2026".to_string(),
+                "2026-11-11T21:30:00-05:00".to_string()
+            )
+        );
+        assert_eq!(date_columns::<Local>(None), (String::new(), String::new()));
     }
 
     #[test]

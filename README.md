@@ -10,7 +10,7 @@
 File Reporter es una herramienta escrita en Rust que se usa con **interfaz gráfica** (para el día a día) o desde la **línea de comandos** (para scripts y automatización). Recorre la carpeta en paralelo y genera hasta tres reportes con la estructura de carpetas y los datos de cada archivo: tamaño, fechas y ruta.
 
 <p align="center">
-  <img src="docs/images/gui-resultado.png" alt="Ventana de resultado de File Reporter: tres reportes generados, siete archivos, dos carpetas omitidas por nombre y una tabla de tipos de archivo con barras de porcentaje" width="760">
+  <img src="docs/images/gui-resultado.png" alt="Ventana de resultado de File Reporter: siete archivos, dos carpetas omitidas por nombre, la carpeta donde se guardaron los tres reportes con botones para abrirlos y una tabla de tipos de archivo con barras de porcentaje" width="760">
 </p>
 
 ---
@@ -72,10 +72,10 @@ file-reporter /ruta/a/escanear
 
 **Interfaz gráfica**
 - 🖱️ Arrastra una carpeta, usa "Examinar…" o elige una de las 5 últimas (🕘).
-- 🧭 Formulario simple: lo esencial arriba y el resto en **Opciones**, con un resumen de lo elegido.
+- 🧭 Formulario simple: arriba solo la carpeta a escanear; el resto, incluida la carpeta de salida, en **Opciones**, con un resumen de lo elegido. Si falta algo para empezar, lo dice junto al botón.
 - 📈 Progreso en vivo (archivos encontrados y carpetas revisadas); **cancela** en cualquier momento con Esc.
 - 🧾 Resultado claro: reportes (abrir o copiar su ruta), tipos de archivo y lo que quedó fuera, con su motivo.
-- ⚠️ Antes de sobrescribir reportes anteriores, ofrece guardar los nuevos con otro nombre.
+- 🔄 Al volver a generar, ofrece actualizar los reportes anteriores o guardar los nuevos con otro nombre, o no volver a preguntar.
 - 🎨 Tema claro, oscuro o el del sistema; recuerda rutas y opciones entre sesiones.
 
 **Línea de comandos**
@@ -98,6 +98,25 @@ En [**Releases**](https://github.com/dbarretol/file-reporter/releases/latest) ha
 
 - **Windows:** abre el `.exe` con doble clic. Como el ejecutable no está firmado, SmartScreen puede avisar la primera vez: *Más información → Ejecutar de todas formas*.
 - **Linux:** descomprime el archivo y ejecuta `./file-reporter`. La interfaz gráfica necesita GTK 3, que traen la mayoría de escritorios.
+
+<details>
+<summary>Comprobar que la descarga está íntegra (opcional)</summary>
+
+<br>
+
+Cada *Release* incluye `SHA256SUMS.txt` con la suma SHA256 de cada ejecutable. Descárgalo junto al ejecutable y compara:
+
+```powershell
+# Windows (PowerShell): debe coincidir con el valor de SHA256SUMS.txt (sale en mayúsculas)
+(Get-FileHash .\file-reporter-vX.Y.Z-windows-x64.exe -Algorithm SHA256).Hash
+```
+
+```bash
+# Linux: comprueba los archivos de la lista que estén en la carpeta
+sha256sum -c --ignore-missing SHA256SUMS.txt
+```
+
+</details>
 
 ### Compilar desde el código fuente
 
@@ -134,27 +153,29 @@ El mismo ejecutable funciona en dos modos:
 
 ```mermaid
 flowchart TD
-    A["📁 Elegir la carpeta a escanear<br/>escribir, Examinar…, 🕘 recientes o arrastrar"] --> B["⚙️ Opciones (opcional)<br/>extensiones · carpetas a omitir · formatos"]
+    A["📁 Elegir la carpeta a escanear<br/>escribir, Examinar…, 🕘 recientes o arrastrar"] --> B["⚙️ Opciones (opcional)<br/>salida · extensiones · carpetas a omitir · formatos"]
     B --> C["▶ Generar reportes"]
     C --> D{"¿Ya hay reportes<br/>en la carpeta de salida?"}
     D -- "No" --> E["⏳ Escaneo con progreso en vivo<br/>Esc cancela"]
-    D -- "Sí" --> F{"Sobrescribir, guardar con<br/>otro nombre o cancelar"}
-    F -- "Sobrescribir u otro nombre" --> E
+    D -- "Sí" --> F{"Actualizar, guardar con<br/>otro nombre o cancelar"}
+    F -- "Actualizar u otro nombre" --> E
     F -- "Cancelar" --> A
     E --> G["✅ Resultado: reportes, tipos de archivo<br/>y lo que quedó fuera"]
 ```
 
-1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…", elige una reciente con 🕘 o arrástrala a la ventana. Debajo se ve el final de la ruta, por si el campo la corta.
-2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
-3. *(Opcional)* Despliega **Opciones**. Plegado, muestra un resumen de lo elegido (p. ej. "Todas las extensiones · omite 7 carpetas · CSV + MD + JSON"). Dentro puedes:
+1. Elige la **carpeta a escanear**: arrástrala a la zona punteada (o a cualquier parte de la ventana), haz clic en esa zona o en "Examinar…", elige una reciente con 🕘 o escribe la ruta. Debajo se ve el final de la ruta, por si el campo la corta, y dónde se guardarán los reportes.
+2. *(Opcional)* Despliega **Opciones**. Plegado, muestra un resumen de lo elegido (p. ej. "Todas las extensiones · omite 7 carpetas · CSV + MD + JSON · salida: misma carpeta"). Dentro puedes:
+   - elegir otra **carpeta de salida** (por defecto, la misma carpeta escaneada; si no existe, se crea);
    - escribir las **extensiones** a incluir (las sugerencias se suman a lo escrito; pulsarlas otra vez las quita);
    - revisar las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas;
    - marcar **Solo carpetas** para obtener solo la jerarquía de directorios;
-   - desmarcar los **formatos** que no necesites.
-4. Pulsa **▶ Generar reportes** (o Enter, si no estás escribiendo en un campo). Al terminar se abre la ventana de resultado. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
+   - desmarcar los **formatos** que no necesites;
+   - volver a activar **Preguntar antes de reemplazar reportes anteriores**, si elegiste "No volver a preguntar".
+3. Pulsa **▶ Generar reportes** (o Enter, si no estás escribiendo en un campo). Si en la carpeta de salida ya hay reportes de una ejecución anterior, puedes **actualizarlos** (se reemplazan) o **guardar los nuevos con otro nombre** (`report-<carpeta>-<fecha>.*`).
+4. Al terminar se abre la ventana de resultado, con la carpeta donde se guardaron los reportes, un botón para abrir cada uno y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir. **↺ Restablecer** vacía el formulario y vuelve las opciones a sus valores por defecto, sin perder el último resultado.
 
 <p align="center">
-  <img src="docs/images/gui-opciones.png" alt="Formulario de File Reporter con la carpeta a escanear, la carpeta de salida y Opciones desplegado: extensiones, carpetas a omitir, solo carpetas y formatos" width="760">
+  <img src="docs/images/gui-opciones.png" alt="Formulario de File Reporter con la carpeta a escanear y Opciones desplegado: carpeta de salida, extensiones, carpetas a omitir, solo carpetas, formatos y preguntar antes de reemplazar" width="760">
 </p>
 
 ### ⌨️ Línea de comandos
@@ -210,7 +231,7 @@ Así se ve una ejecución sobre un proyecto de ejemplo:
    .rs                      2 arch. ·    7.0 KB ·   0.3 %
    .md                      1 arch. ·    1.9 KB ·  <0.1 %
 🚫 2 carpetas omitidas por nombre (.git, build)
-⏱️  Tiempo: 5.26ms
+⏱️  Tiempo: <1 s
 ```
 
 | Opción | Descripción |
@@ -234,7 +255,7 @@ Mientras escanea, la terminal muestra cuántos archivos lleva encontrados, cuán
 
 ## 📁 Reportes generados
 
-Cada ejecución crea en la carpeta de salida los reportes elegidos (los tres por defecto). Se llaman `report.*` salvo que se elija otro nombre con `-n` o, en la GUI, con "Guardar con otro nombre" al ir a sobrescribir.
+Cada ejecución crea en la carpeta de salida los reportes elegidos (los tres por defecto). Se llaman `report.*` salvo que se elija otro nombre con `-n` o, en la GUI, con "Guardar con otro nombre" al volver a generar.
 
 | Archivo | Contenido | Ideal para |
 |---|---|---|
@@ -258,15 +279,15 @@ UTF-8 con BOM y separador `;`, para que Excel lo abra correctamente sin configur
 | `extension` | Extensión, sin punto |
 | `size_mb` | Tamaño en MB con 3 decimales y coma decimal (`1,270`), como lo espera Excel en español |
 | `size_bytes` | Tamaño exacto en bytes |
-| `created` / `modified` | Fechas en `DD/MM/AAAA` (formato que Excel reconoce directamente) |
-| `created_iso` / `modified_iso` | Fecha y hora en ISO-8601, ordenables como texto |
+| `created` / `modified` | Fechas en `DD/MM/AAAA` según la hora local del equipo, las mismas que muestra el explorador de archivos (formato que Excel reconoce directamente) |
+| `created_iso` / `modified_iso` | Fecha y hora local en ISO-8601, con el desfase respecto de UTC (`2026-11-12T14:13:21-05:00`), fáciles de ordenar y procesar |
 | `directory` | Carpeta que contiene el archivo |
 | `full_path` | Ruta completa |
 
 ```text
 name;extension;size_mb;size_bytes;created;modified;created_iso;modified_iso;directory;full_path
-manual;pdf;1,270;1331200;12/11/2026;12/11/2026;2026-11-12T19:13:21.368492800+00:00;2026-11-12T19:13:21.369491400+00:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\manual.pdf
-presupuesto;xlsx;0,047;49152;12/11/2026;12/11/2026;2026-11-12T19:13:21.370620500+00:00;2026-11-12T19:13:21.370620500+00:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\presupuesto.xlsx
+manual;pdf;1,270;1331200;12/11/2026;12/11/2026;2026-11-12T14:13:21.368492800-05:00;2026-11-12T14:13:21.369491400-05:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\manual.pdf
+presupuesto;xlsx;0,047;49152;12/11/2026;12/11/2026;2026-11-12T14:13:21.370620500-05:00;2026-11-12T14:13:21.370620500-05:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\presupuesto.xlsx
 ```
 
 Si un nombre, extensión o ruta empieza por `=`, `+`, `-`, `@`, tabulador o retorno de carro, se le antepone un apóstrofo para que Excel no lo ejecute como fórmula.
@@ -335,8 +356,8 @@ La tabla lista todas las extensiones, de mayor a menor tamaño total; no aparece
           "size_mb": 1.26953125,
           "size_bytes": 1331200,
           "extension": "pdf",
-          "created": "2026-11-12T19:13:21.368492800Z",
-          "modified": "2026-11-12T19:13:21.369491400Z"
+          "created": "2026-11-12T14:13:21.368492800-05:00",
+          "modified": "2026-11-12T14:13:21.369491400-05:00"
         }
       ]
     }
@@ -381,6 +402,7 @@ src/
 │   └── …            # widgets, paleta de colores, utilidades
 ├── icon.rs          # Icono de la app, dibujado por código (sin imágenes)
 ├── runner.rs        # Flujo común: validar → escanear → escribir reportes
+├── naming.rs        # Nombre de los reportes: validación y nombre automático
 ├── summary.rs       # Textos del resumen que comparten CLI y GUI (tamaños, tipos, avisos)
 ├── scanner.rs       # Recorrido paralelo de la carpeta
 ├── models.rs        # Node (árbol), FileRecord (fila del CSV) y ExtStat (tipos)
@@ -435,7 +457,7 @@ cargo run --profile fast                    # probar la app: recompila en segund
 
 Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)). Cubren el escaneo, los filtros, la exclusión de carpetas, el modo solo carpetas, la cancelación, la escritura segura y los tres formatos de salida, además de la CLI como programa (opciones, códigos de salida y mensajes de error). En Windows también crean *junctions* para probar el manejo de enlaces sin permisos de administrador.
 
-Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu. Al subir un tag `vX.Y.Z`, [otro workflow](.github/workflows/release.yml) compila los ejecutables y prepara un borrador de *Release* con las notas de [`CHANGELOG.md`](CHANGELOG.md).
+Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu, y además se comprueba que el proyecto compila con la versión mínima de Rust (1.95). Al subir un tag `vX.Y.Z`, [otro workflow](.github/workflows/release.yml) compila los ejecutables y prepara un borrador de *Release* con sus sumas SHA256 y las notas de [`CHANGELOG.md`](CHANGELOG.md). [Dependabot](.github/dependabot.yml) propone cada mes las actualizaciones de dependencias y de Actions.
 
 ---
 

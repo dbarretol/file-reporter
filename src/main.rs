@@ -5,6 +5,7 @@ mod cli;
 mod gui;
 mod icon;
 mod models;
+mod naming;
 mod reporters;
 mod runner;
 mod scanner;

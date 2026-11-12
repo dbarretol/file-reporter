@@ -50,3 +50,26 @@ jobs:
 
       - name: Test
         run: cargo test --locked
+
+  msrv:
+    # Compila con la versión mínima de Rust declarada en Cargo.toml
+    # (`rust-version`, la que exige egui): avisa si una actualización de
+    # dependencias la sube sin que nos demos cuenta.
+    name: msrv (Rust 1.95)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux system dependencies (rfd / eframe)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev
+
+      - uses: dtolnay/rust-toolchain@1.95
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name == 'push' }}
+
+      - name: Check
+        run: cargo check --all-targets --locked

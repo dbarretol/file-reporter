@@ -2,6 +2,29 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [0.7.0] - 2026-11-12
+
+### Añadido
+
+- **GUI: "No volver a preguntar"** en el diálogo que aparece al volver a generar: los reportes se actualizan sin preguntar. Se puede deshacer en Opciones, con "Preguntar antes de reemplazar reportes anteriores" ([#74](https://github.com/dbarretol/file-reporter/issues/74)).
+- **Sumas SHA256 en cada Release** (`SHA256SUMS.txt`), para comprobar que el ejecutable descargado está íntegro. El README explica cómo hacerlo en Windows y Linux ([#77](https://github.com/dbarretol/file-reporter/issues/77)).
+
+### Cambiado
+
+- **GUI: primer uso más claro.** Mientras no hay carpeta elegida, una zona punteada invita a arrastrarla (o a hacer clic para elegirla), y junto al botón "Generar reportes" se explica por qué aún no se puede generar, antes solo visible en un tooltip. La carpeta de salida pasa a "Opciones", que la incluye en su resumen ("salida: misma carpeta"); arriba queda solo la carpeta a escanear. Con muchas extensiones, el resumen nombra tres y cuenta el resto ("pdf, docx, xlsx… (+4)"). "Limpiar" pasa a llamarse "Restablecer" y ya no borra el último resultado ([#75](https://github.com/dbarretol/file-reporter/issues/75)).
+- **GUI: volver a generar con menos fricción.** El diálogo que aparece si ya hay reportes ofrece "Actualizar reportes" como acción principal (antes "Sobrescribir", en rojo), junto a "Guardar con otro nombre" y "Cancelar", y lista los nombres alternativos completos. La ventana de resultado muestra una vez la carpeta donde se guardaron y, en cada fila, solo el nombre del archivo. Se quitan los emoji que la fuente de la interfaz no dibujaba bien (📂, 📁, 📋) ([#74](https://github.com/dbarretol/file-reporter/issues/74)).
+- **CLI:** el tiempo total se muestra como en la GUI (`<1 s`, `42s`, `3m 05s`) en vez de con el formato interno de Rust (`5.26ms`, `183.4s`) ([#78](https://github.com/dbarretol/file-reporter/issues/78)).
+
+### Corregido
+
+- **Fechas en hora local:** `report.csv` calculaba `created` y `modified` en UTC, así que fuera de UTC un archivo podía salir con otra fecha que la del explorador de archivos (en UTC-5, todo lo modificado desde las 19:00 aparecía con la fecha del día siguiente). Ahora las fechas usan la hora local del equipo. Las columnas `created_iso`/`modified_iso` y las fechas de `report.json` pasan a llevar el desfase local (`2026-11-11T21:30:00-05:00`) en vez de UTC (`2026-11-12T02:30:00+00:00`): es el mismo instante, y cualquier lector de ISO-8601 lo interpreta igual ([#72](https://github.com/dbarretol/file-reporter/issues/72)).
+- **GUI: el menú de carpetas recientes ya no consulta el disco en cada cuadro.** Comprobaba si cada carpeta seguía existiendo una y otra vez mientras el menú estaba abierto, así que una carpeta de red que no responde podía congelar la ventana. Ahora se comprueban en segundo plano al arrancar y cuando cambia la lista ([#76](https://github.com/dbarretol/file-reporter/issues/76)).
+- **GUI:** con una carpeta justo bajo la raíz de una unidad, la nota bajo el campo decía `…\\\Windows` en vez de `C:\Windows` ([#75](https://github.com/dbarretol/file-reporter/issues/75)).
+
+### Seguridad
+
+- **Dependencias actualizadas** a sus últimos parches compatibles (clap 4.6.7, serde_json 1.0.154, anyhow 1.0.104, chrono 0.4.45 y otras). Quedan resueltos los avisos RUSTSEC-2026-0190 (anyhow), RUSTSEC-2026-0204 (crossbeam-epoch), RUSTSEC-2026-0186 (memmap2), RUSTSEC-2026-0194 y RUSTSEC-2026-0195 (quick-xml) y RUSTSEC-2026-0486 (rustix). Ninguno afectaba en la práctica: la app no usa las funciones afectadas ([#73](https://github.com/dbarretol/file-reporter/issues/73)).
+
 ## [0.6.0] - 2026-11-12
 
 ### Añadido
@@ -101,6 +124,7 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
+[0.7.0]: https://github.com/dbarretol/file-reporter/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dbarretol/file-reporter/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dbarretol/file-reporter/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/dbarretol/file-reporter/compare/v0.4.0...v0.4.1

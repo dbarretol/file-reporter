@@ -1,7 +1,6 @@
 //! Formulario de configuración y botones de acción.
 
 use super::palette::Palette;
-use super::run::RunState;
 use super::util::clean_path_input;
 use super::widgets::{field_note, folder_row};
 use super::{default_exclude_dirs, App, ALL_FORMATS};
@@ -29,6 +28,10 @@ pub(super) enum PathStatus {
     NotDir,
     Dir,
 }
+
+/// Extensiones que se nombran en el resumen de "Opciones"; el resto se
+/// cuenta ("pdf, docx, xlsx… (+4)").
+const SUMMARY_MAX_EXTENSIONS: usize = 3;
 
 /// Tiempo sin cambios en el texto antes de consultar el disco.
 const PATH_CHECK_DEBOUNCE: Duration = Duration::from_millis(300);
@@ -134,6 +137,66 @@ impl PathCheck {
     }
 }
 
+/// Qué carpetas recientes siguen existiendo. Como `PathCheck`, consulta el
+/// disco en otro hilo: una carpeta de red caída entre las recientes podía
+/// congelar la ventana mientras el menú 🕘 estaba abierto, porque se
+/// comprobaban todas en cada frame. Se comprueba al arrancar y cada vez que
+/// cambia la lista; mientras tanto se muestran todas, y la que se elija la
+/// valida igualmente `PathCheck`.
+#[derive(Default)]
+pub(super) struct RecentCheck {
+    /// Última lista comprobada y, para cada carpeta, si existe.
+    checked: Vec<(String, bool)>,
+    /// Comprobación en curso: lista pedida y canal del resultado.
+    running: Option<(Vec<String>, Receiver<Vec<bool>>)>,
+}
+
+impl RecentCheck {
+    /// Se llama en cada frame con la lista actual; lanza una comprobación
+    /// si cambió desde la última.
+    pub fn refresh(&mut self, recent: &[String], ctx: &egui::Context) {
+        if let Some((asked, rx)) = &self.running {
+            match rx.try_recv() {
+                Ok(exists) => {
+                    self.checked = asked.iter().cloned().zip(exists).collect();
+                    self.running = None;
+                }
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint_after(PATH_CHECK_POLL);
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => self.running = None,
+            }
+        }
+        let unchanged = self.checked.len() == recent.len()
+            && self.checked.iter().zip(recent).all(|((p, _), r)| p == r);
+        if unchanged || recent.is_empty() {
+            return;
+        }
+        let asked = recent.to_vec();
+        let paths = asked.clone();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(
+                paths
+                    .iter()
+                    .map(|p| std::path::Path::new(p).is_dir())
+                    .collect(),
+            );
+        });
+        self.running = Some((asked, rx));
+        ctx.request_repaint_after(PATH_CHECK_POLL);
+    }
+
+    /// Carpetas que ofrecer: todas menos las que se sabe que ya no existen.
+    pub fn visible<'a>(&self, recent: &'a [String]) -> Vec<&'a String> {
+        recent
+            .iter()
+            .filter(|p| !self.checked.iter().any(|(c, exists)| c == *p && !exists))
+            .collect()
+    }
+}
+
 /// Qué hay en disco en `path` (no vacío).
 fn disk_status(path: &str) -> PathStatus {
     let path = std::path::Path::new(path);
@@ -148,8 +211,9 @@ fn disk_status(path: &str) -> PathStatus {
 
 impl App {
     /// ─── Sección: Formulario de entrada ──────────────────────────
-    /// Arriba lo imprescindible (carpeta a escanear y de salida); el resto,
-    /// en "Opciones", plegado por defecto y con un resumen de una línea.
+    /// Arriba solo lo imprescindible, la carpeta a escanear; el resto
+    /// (carpeta de salida incluida), en "Opciones", plegado por defecto y con
+    /// un resumen de una línea.
     pub(super) fn render_form(&mut self, ui: &mut egui::Ui) {
         let palette = Palette::of(ui);
         let enabled = !self.is_busy();
@@ -163,24 +227,32 @@ impl App {
                         .strong()
                         .size(13.0),
                 );
+                let recent = self.recent_check.visible(&self.recent_inputs);
                 folder_row(
                     ui,
                     &mut self.input_path,
                     enabled,
                     "Selecciona la carpeta o arrástrala a la ventana…",
-                    &self.recent_inputs,
+                    &recent,
                     || rfd::FileDialog::new().pick_folder(),
                 );
                 match self.input_check.status() {
                     PathStatus::Empty | PathStatus::Checking => {}
                     // El campo corta las rutas largas por el final, que es
                     // lo que identifica la carpeta: se repite aquí.
+                    // Si no se eligió otra salida (en Opciones), se dice aquí
+                    // dónde quedarán los reportes.
                     PathStatus::Dir => field_note(
                         ui,
                         palette.muted,
                         &format!(
-                            "Se escaneará: {}",
-                            path_tail(clean_path_input(&self.input_path))
+                            "Se escaneará: {}{}",
+                            path_tail(clean_path_input(&self.input_path)),
+                            if clean_path_input(&self.output_path).is_empty() {
+                                "  ·  los reportes se guardarán ahí mismo"
+                            } else {
+                                ""
+                            }
                         ),
                     ),
                     PathStatus::Missing => field_note(ui, palette.error, "✖ La ruta no existe"),
@@ -190,54 +262,23 @@ impl App {
                 }
 
                 ui.add_space(8.0);
-
-                // Carpeta de salida
-                ui.label(egui::RichText::new("Carpeta de salida").strong().size(13.0));
-                folder_row(
-                    ui,
-                    &mut self.output_path,
-                    enabled,
-                    "Por defecto: la carpeta escaneada",
-                    &[],
-                    || rfd::FileDialog::new().pick_folder(),
-                );
-                // Dónde acabarán los reportes, para que el valor por defecto
-                // (la carpeta escaneada) no sea una sorpresa.
-                match (self.output_check.status(), self.input_check.status()) {
-                    (PathStatus::NotDir, _) => {
-                        field_note(ui, palette.error, "✖ Es un archivo, no una carpeta")
-                    }
-                    (PathStatus::Missing, _) => field_note(
-                        ui,
-                        palette.muted,
-                        "La carpeta no existe: se creará al generar los reportes",
-                    ),
-                    (PathStatus::Dir, _) => field_note(
-                        ui,
-                        palette.muted,
-                        &format!(
-                            "Los reportes se guardarán en: {}",
-                            path_tail(clean_path_input(&self.output_path))
-                        ),
-                    ),
-                    (PathStatus::Empty, PathStatus::Dir) => field_note(
-                        ui,
-                        palette.muted,
-                        "Los reportes se guardarán en la carpeta escaneada",
-                    ),
-                    _ => {}
-                }
-
-                ui.add_space(8.0);
                 self.render_options(ui, &palette, enabled);
                 // Fuera del plegable: con "Opciones" cerrado también se ve.
                 if !self.formats.contains(&true) {
                     field_note(ui, palette.error, "✖ Elige al menos un formato en Opciones");
                 }
+                if self.output_check.status() == PathStatus::NotDir {
+                    field_note(
+                        ui,
+                        palette.error,
+                        "✖ La carpeta de salida (en Opciones) es un archivo, no una carpeta",
+                    );
+                }
             });
     }
 
-    /// "Opciones": extensiones, carpetas a omitir, solo carpetas y formatos.
+    /// "Opciones": carpeta de salida, extensiones, carpetas a omitir, solo
+    /// carpetas, formatos y si preguntar antes de reemplazar reportes.
     /// Plegado muestra un resumen de lo elegido.
     fn render_options(&mut self, ui: &mut egui::Ui, palette: &Palette, enabled: bool) {
         // En modo solo carpetas las extensiones no tienen efecto.
@@ -257,6 +298,45 @@ impl App {
         }
         header.show(ui, |ui| {
             ui.add_space(4.0);
+            // Carpeta de salida: casi nunca se cambia (por defecto, la
+            // carpeta escaneada), por eso va aquí y no arriba.
+            ui.label(egui::RichText::new("Carpeta de salida").size(12.0));
+            folder_row(
+                ui,
+                &mut self.output_path,
+                enabled,
+                "Por defecto: la carpeta escaneada",
+                &[],
+                || rfd::FileDialog::new().pick_folder(),
+            );
+            // Dónde acabarán los reportes, para que el valor por defecto no
+            // sea una sorpresa.
+            match (self.output_check.status(), self.input_check.status()) {
+                (PathStatus::NotDir, _) => {
+                    field_note(ui, palette.error, "✖ Es un archivo, no una carpeta")
+                }
+                (PathStatus::Missing, _) => field_note(
+                    ui,
+                    palette.muted,
+                    "La carpeta no existe: se creará al generar los reportes",
+                ),
+                (PathStatus::Dir, _) => field_note(
+                    ui,
+                    palette.muted,
+                    &format!(
+                        "Los reportes se guardarán en: {}",
+                        path_tail(clean_path_input(&self.output_path))
+                    ),
+                ),
+                (PathStatus::Empty, PathStatus::Dir) => field_note(
+                    ui,
+                    palette.muted,
+                    "Los reportes se guardarán en la carpeta escaneada",
+                ),
+                _ => {}
+            }
+
+            ui.add_space(8.0);
             // Extensiones
             ui.label(egui::RichText::new("Extensiones (separadas por coma)").size(12.0));
             let ext_width = ui.available_width().max(120.0);
@@ -352,20 +432,36 @@ impl App {
                     ui.add_enabled(enabled, egui::Checkbox::new(on, format.label()));
                 }
             });
+            ui.add_enabled(
+                enabled,
+                egui::Checkbox::new(
+                    &mut self.ask_before_overwrite,
+                    "Preguntar antes de reemplazar reportes anteriores",
+                ),
+            )
+            .on_hover_text(
+                "Si ya hay reportes con el mismo nombre en la carpeta de salida, \
+                 ofrece actualizarlos o guardar los nuevos con otro nombre.",
+            );
         });
     }
 
     /// Resumen de una línea de "Opciones", p. ej. "Todas las extensiones ·
-    /// omite 7 carpetas · CSV + MD + JSON".
+    /// omite 7 carpetas · CSV + MD + JSON · salida: misma carpeta".
     fn options_summary(&self) -> String {
         let what = if self.dirs_only {
             "Solo carpetas".to_string()
         } else {
             let exts = ext_list(&self.extensions);
-            if exts.is_empty() {
-                "Todas las extensiones".to_string()
-            } else {
-                exts.join(", ")
+            match exts.len() {
+                0 => "Todas las extensiones".to_string(),
+                // Con muchas, el resumen no cabría en ventanas estrechas.
+                n if n > SUMMARY_MAX_EXTENSIONS => format!(
+                    "{}… (+{})",
+                    exts[..SUMMARY_MAX_EXTENSIONS].join(", "),
+                    n - SUMMARY_MAX_EXTENSIONS
+                ),
+                _ => exts.join(", "),
             }
         };
         let dirs = dir_list(&self.exclude_dirs).len();
@@ -389,12 +485,18 @@ impl App {
         } else {
             formats.join(" + ")
         };
-        format!("{what}  ·  {omit}  ·  {formats}")
+        let output = clean_path_input(&self.output_path);
+        let output = if output.is_empty() {
+            "salida: misma carpeta".to_string()
+        } else {
+            format!("salida: {}", path_tail(output))
+        };
+        format!("{what}  ·  {omit}  ·  {formats}  ·  {output}")
     }
 
     /// Por qué no se puede lanzar un escaneo ahora mismo, o `None` si se
-    /// puede. Compartido entre el botón "Generar reportes" (que lo muestra
-    /// como tooltip al estar deshabilitado) y Enter.
+    /// puede. Lo usan el botón "Generar reportes" (tooltip y nota a su lado)
+    /// y Enter.
     pub(super) fn run_blocker(&self) -> Option<&'static str> {
         if self.is_busy() {
             return Some("Hay un escaneo en curso.");
@@ -460,22 +562,35 @@ impl App {
                 }
             }
 
-            // Botón secundario: limpiar
-            let can_clear = !self.is_busy()
+            // Botón secundario: restablecer el formulario.
+            let can_reset = !self.is_busy()
                 && (!self.input_path.is_empty()
                     || !self.output_path.is_empty()
                     || !self.extensions.is_empty()
                     || self.exclude_dirs != default_exclude_dirs()
                     || self.dirs_only
-                    || self.formats != ALL_FORMATS);
+                    || self.formats != ALL_FORMATS
+                    || !self.ask_before_overwrite);
             if ui
                 .add_enabled(
-                    can_clear,
-                    egui::Button::new("🗑  Limpiar").min_size(egui::vec2(100.0, 36.0)),
+                    can_reset,
+                    egui::Button::new("↺  Restablecer").min_size(egui::vec2(100.0, 36.0)),
+                )
+                .on_hover_text(
+                    "Vacía las carpetas y vuelve las opciones a sus valores por \
+                     defecto. El último resultado se conserva.",
                 )
                 .clicked()
             {
-                self.clear();
+                self.reset_form();
+            }
+
+            // Por qué aún no se puede generar, a la vista (antes solo en el
+            // tooltip del botón deshabilitado).
+            if !self.is_busy() {
+                if let Some(reason) = self.run_blocker() {
+                    ui.label(egui::RichText::new(reason).color(palette.muted).size(12.0));
+                }
             }
 
             // Resumen de la última corrida, en la misma fila para que se vea
@@ -484,24 +599,24 @@ impl App {
         });
     }
 
-    /// Vuelve el formulario y el resultado al estado inicial.
-    fn clear(&mut self) {
+    /// Vuelve el formulario a sus valores por defecto ("Restablecer"). El
+    /// resultado de la última corrida se conserva: sigue a mano con "Ver
+    /// resultado".
+    fn reset_form(&mut self) {
         self.input_path.clear();
         self.output_path.clear();
         self.extensions.clear();
         self.exclude_dirs = default_exclude_dirs();
         self.formats = ALL_FORMATS;
         self.dirs_only = false;
-        self.state = RunState::Idle;
-        self.pending_confirm = None;
-        self.results_open = false;
-        self.copied = None;
+        self.ask_before_overwrite = true;
         self.clear_ui_error();
     }
 }
 
 /// Últimos dos componentes de una ruta (`…\review\in`), la parte que la
-/// identifica y que el campo de texto corta cuando es larga.
+/// identifica y que el campo de texto corta cuando es larga. Con dos
+/// carpetas o menos (`C:\Windows`, `E:\Demo\Proyecto`) la ruta va entera.
 fn path_tail(path: &str) -> String {
     let p = std::path::Path::new(path);
     let mut parts: Vec<String> = p
@@ -513,7 +628,13 @@ fn path_tail(path: &str) -> String {
     parts.reverse();
     let sep = std::path::MAIN_SEPARATOR.to_string();
     let tail = parts.join(&sep);
-    if p.components().count() > 2 {
+    // Se cuentan solo las carpetas: la unidad (`C:`) y la raíz (`\`) también
+    // son componentes, y con `C:\Windows` salía "…\\\Windows".
+    let folders = p
+        .components()
+        .filter(|c| matches!(c, std::path::Component::Normal(_)))
+        .count();
+    if folders > 2 {
         format!("…{sep}{tail}")
     } else {
         path.to_string()
@@ -565,6 +686,7 @@ fn toggle_preset(field: &str, preset: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gui::run::RunState;
 
     /// Llama a `refresh` hasta que el estado deja de ser `Checking`.
     fn settle(check: &mut PathCheck, text: &str, ctx: &egui::Context) -> PathStatus {
@@ -619,6 +741,27 @@ mod tests {
         assert_eq!(check.status(), PathStatus::Dir);
     }
 
+    #[test]
+    fn recent_check_hides_missing_folders_after_checking() {
+        let ctx = egui::Context::default();
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().display().to_string();
+        let missing = dir.path().join("no_existe").display().to_string();
+        let recent = vec![existing.clone(), missing];
+        let mut check = RecentCheck::default();
+
+        // Antes de que llegue la respuesta, se ofrecen todas.
+        check.refresh(&recent, &ctx);
+        assert_eq!(check.visible(&recent).len(), 2);
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while check.running.is_some() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+            check.refresh(&recent, &ctx);
+        }
+        assert_eq!(check.visible(&recent), vec![&existing]);
+    }
+
     fn app_with(extensions: &str, exclude: &str, dirs_only: bool, formats: [bool; 3]) -> App {
         App {
             extensions: extensions.to_string(),
@@ -634,19 +777,53 @@ mod tests {
         let app = app_with("", &default_exclude_dirs(), false, ALL_FORMATS);
         assert_eq!(
             app.options_summary(),
-            "Todas las extensiones  ·  omite 7 carpetas  ·  CSV + MD + JSON"
+            "Todas las extensiones  ·  omite 7 carpetas  ·  CSV + MD + JSON  ·  salida: misma carpeta"
         );
         let app = app_with(".PDF, docx", "build", false, [true, false, false]);
         assert_eq!(
             app.options_summary(),
-            "pdf, docx  ·  omite 1 carpeta  ·  CSV"
+            "pdf, docx  ·  omite 1 carpeta  ·  CSV  ·  salida: misma carpeta"
         );
         // Solo carpetas: las extensiones no cuentan.
         let app = app_with("pdf", "", true, [false, false, false]);
         assert_eq!(
             app.options_summary(),
-            "Solo carpetas  ·  sin carpetas omitidas  ·  ningún formato"
+            "Solo carpetas  ·  sin carpetas omitidas  ·  ningún formato  ·  salida: misma carpeta"
         );
+    }
+
+    #[test]
+    fn options_summary_shortens_long_extension_lists_and_names_the_output() {
+        let mut app = app_with("pdf, docx, xlsx, jpg, png", "", false, ALL_FORMATS);
+        let sep = std::path::MAIN_SEPARATOR.to_string();
+        app.output_path = ["", "datos", "reportes", "2026"].join(&sep);
+        assert_eq!(
+            app.options_summary(),
+            format!(
+                "pdf, docx, xlsx… (+2)  ·  sin carpetas omitidas  ·  CSV + MD + JSON  ·  \
+                 salida: …{sep}reportes{sep}2026"
+            )
+        );
+    }
+
+    #[test]
+    fn reset_form_restores_the_defaults_and_keeps_the_result() {
+        let mut app = app_with("pdf", "", true, [true, false, false]);
+        app.input_path = "C:\\x".to_string();
+        app.output_path = "C:\\y".to_string();
+        app.ask_before_overwrite = false;
+        app.state = RunState::Cancelled {
+            found: 3,
+            dirs_only: false,
+            elapsed: Duration::ZERO,
+        };
+        app.reset_form();
+        assert!(app.input_path.is_empty() && app.output_path.is_empty());
+        assert!(app.extensions.is_empty() && !app.dirs_only);
+        assert_eq!(app.exclude_dirs, default_exclude_dirs());
+        assert_eq!(app.formats, ALL_FORMATS);
+        assert!(app.ask_before_overwrite);
+        assert!(matches!(app.state, RunState::Cancelled { found: 3, .. }));
     }
 
     #[test]
@@ -656,6 +833,16 @@ mod tests {
         assert_eq!(path_tail(&long), format!("…{sep}review{sep}in"));
         // Rutas cortas, tal cual.
         assert_eq!(path_tail("docs"), "docs");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn path_tail_keeps_short_windows_paths_whole() {
+        // La unidad y la raíz no cuentan como carpetas.
+        assert_eq!(path_tail(r"C:\Windows"), r"C:\Windows");
+        assert_eq!(path_tail(r"E:\Demo\Proyecto"), r"E:\Demo\Proyecto");
+        assert_eq!(path_tail(r"C:\"), r"C:\");
+        assert_eq!(path_tail(r"C:\a\b\c"), r"…\b\c");
     }
 
     #[test]

@@ -48,7 +48,7 @@ pub struct Cli {
 
     /// Nombre de los reportes, sin extensión (ej: -n facturas → facturas.csv,
     /// facturas.md, facturas.json).
-    #[arg(short = 'n', long = "name", value_name = "NOMBRE", default_value = runner::DEFAULT_REPORT_NAME)]
+    #[arg(short = 'n', long = "name", value_name = "NOMBRE", default_value = crate::naming::DEFAULT_REPORT_NAME)]
     pub name: String,
 
     /// Mostrar qué se omitió y por qué: carpetas y archivos sin acceso,
@@ -146,7 +146,10 @@ pub fn run(args: &Cli) -> Result<()> {
         args.verbose == 0,
     )?;
     print!("{}", summary_text(&summary, args.verbose));
-    println!("⏱️  Tiempo: {:.2?}", start.elapsed());
+    println!(
+        "⏱️  Tiempo: {}",
+        summary::fmt_seconds(start.elapsed().as_secs_f32())
+    );
     Ok(())
 }
 
@@ -283,7 +286,7 @@ mod tests {
             exclude: vec![],
             exclude_common: false,
             formats: vec![],
-            name: runner::DEFAULT_REPORT_NAME.to_string(),
+            name: crate::naming::DEFAULT_REPORT_NAME.to_string(),
             verbose: 0,
         }
     }

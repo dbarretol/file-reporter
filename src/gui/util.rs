@@ -34,24 +34,6 @@ pub(super) fn truncate_path_display(s: &str, max_chars: usize) -> String {
     format!("…{}", tail)
 }
 
-pub(super) fn fmt_seconds(s: f32) -> String {
-    // "0s" en un escaneo rápido parecía un error.
-    if s < 1.0 {
-        return "<1 s".to_string();
-    }
-    let s = s as u64;
-    let h = s / 3600;
-    let m = (s % 3600) / 60;
-    let sec = s % 60;
-    if h > 0 {
-        format!("{h}h {m:02}m {sec:02}s")
-    } else if m > 0 {
-        format!("{m}m {sec:02}s")
-    } else {
-        format!("{sec}s")
-    }
-}
-
 #[cfg(target_os = "windows")]
 pub(super) fn open_in_explorer(path: &Path) -> std::io::Result<()> {
     std::process::Command::new("explorer")
@@ -188,18 +170,6 @@ mod tests {
         let out = truncate_path_display(s, 12);
         assert_eq!(out.chars().count(), 12);
         assert!(out.starts_with('…'));
-    }
-
-    #[test]
-    fn fmt_seconds_boundaries() {
-        assert_eq!(fmt_seconds(0.0), "<1 s");
-        assert_eq!(fmt_seconds(0.4), "<1 s");
-        assert_eq!(fmt_seconds(1.0), "1s");
-        assert_eq!(fmt_seconds(59.0), "59s");
-        assert_eq!(fmt_seconds(60.0), "1m 00s");
-        assert_eq!(fmt_seconds(3599.0), "59m 59s");
-        assert_eq!(fmt_seconds(3600.0), "1h 00m 00s");
-        assert_eq!(fmt_seconds(3661.0), "1h 01m 01s");
     }
 
     #[test]

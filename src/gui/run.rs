@@ -70,7 +70,7 @@ pub(super) struct PendingRun {
     /// Reportes existentes que pisaría (calculados una sola vez).
     pub existing: Vec<PathBuf>,
     /// Nombre libre para "Guardar con otro nombre" (ver
-    /// `runner::auto_report_name`), calculado al abrir el diálogo.
+    /// `naming::auto_report_name`), calculado al abrir el diálogo.
     pub alt_name: String,
 }
 
@@ -86,8 +86,9 @@ impl App {
     }
 
     /// Hay un escaneo en curso o un diálogo de confirmación abierto: el
-    /// formulario queda inerte. El diálogo no es un modal real de egui, así
-    /// que sin esto se podría seguir editando "por debajo" de él.
+    /// formulario queda inerte. El diálogo de sobrescritura es un modal y ya
+    /// bloquea los clics, pero esto además atenúa los campos e ignora las
+    /// carpetas arrastradas y Enter mientras está abierto.
     pub(super) fn is_busy(&self) -> bool {
         self.is_running() || self.pending_confirm.is_some()
     }
@@ -117,13 +118,14 @@ impl App {
             dirs_only: self.dirs_only,
             exclude_dirs: runner::parse_dir_names([self.exclude_dirs.as_str()]),
             formats: self.selected_formats(),
-            report_name: runner::DEFAULT_REPORT_NAME.to_string(),
+            report_name: crate::naming::DEFAULT_REPORT_NAME.to_string(),
         }
     }
 
     /// Se llama al pulsar "Generar reportes". Si ya existen reportes de una
     /// corrida anterior en la carpeta de salida, pide confirmación antes de
-    /// sobrescribirlos en vez de pisarlos en silencio.
+    /// sobrescribirlos, salvo que el usuario haya elegido "No volver a
+    /// preguntar" (`ask_before_overwrite`).
     pub(super) fn request_run(&mut self) {
         // La carpeta pudo cambiar en disco sin que cambiara el texto: que la
         // validación en vivo vuelva a mirar el disco en el próximo frame.
@@ -133,11 +135,12 @@ impl App {
         // Se calcula una sola vez aquí, no en cada frame mientras el diálogo
         // de confirmación está abierto.
         let existing = existing_reports(&cfg);
-        if existing.is_empty() {
+        if existing.is_empty() || !self.ask_before_overwrite {
             self.start_run(cfg);
         } else {
             let today = chrono::Local::now().date_naive();
-            let alt_name = runner::auto_report_name(&cfg.input, &cfg.output, &cfg.formats, today);
+            let alt_name =
+                crate::naming::auto_report_name(&cfg.input, &cfg.output, &cfg.formats, today);
             self.pending_confirm = Some(PendingRun {
                 cfg,
                 existing,
@@ -352,6 +355,42 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// App lista para generar en una carpeta que ya tiene `report.csv`.
+    fn app_with_previous_report(dir: &std::path::Path, ask: bool) -> App {
+        std::fs::write(dir.join("report.csv"), "x").unwrap();
+        App {
+            input_path: dir.display().to_string(),
+            formats: [true, false, false],
+            ask_before_overwrite: ask,
+            ..App::default()
+        }
+    }
+
+    #[test]
+    fn request_run_asks_before_replacing_previous_reports() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = app_with_previous_report(dir.path(), true);
+        app.request_run();
+        assert!(app.pending_confirm.is_some());
+        assert!(!app.is_running());
+    }
+
+    #[test]
+    fn request_run_replaces_without_asking_when_the_user_opted_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = app_with_previous_report(dir.path(), false);
+        app.request_run();
+        assert!(app.pending_confirm.is_none());
+        assert!(app.is_running());
+        // Que el escaneo termine antes de borrar la carpeta temporal.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while app.is_running() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+            app.poll_worker(&egui::Context::default());
+        }
+        assert!(matches!(app.state, RunState::Done { .. }));
     }
 
     #[test]

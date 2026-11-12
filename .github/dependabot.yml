@@ -1,0 +1,25 @@
+# Actualizaciones de versión: una vez al mes, como PRs contra `dev` (el flujo
+# del proyecto es rama → dev → main). Las de seguridad las abre GitHub aparte,
+# siempre contra la rama por defecto.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: monthly
+    groups:
+      # Los parches y versiones menores juntos, en una sola PR.
+      cargo-minor:
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: [dependencies]

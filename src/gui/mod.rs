@@ -20,7 +20,7 @@ mod widgets;
 use crate::runner::ReportFormat;
 use anyhow::Result;
 use eframe::egui;
-use form::PathCheck;
+use form::{PathCheck, RecentCheck};
 use palette::{Palette, ThemeChoice};
 use run::{PendingRun, RunState};
 use serde::{Deserialize, Serialize};
@@ -84,10 +84,10 @@ const COPIED_TTL: Duration = Duration::from_secs(2);
 /// antes de desaparecer solo, si no lo reemplaza antes una acción nueva.
 const UI_ERROR_TTL: Duration = Duration::from_secs(5);
 
-/// Todos los formatos marcados (valor por defecto y al pulsar "Limpiar").
+/// Todos los formatos marcados (valor por defecto y al pulsar "Restablecer").
 const ALL_FORMATS: [bool; 3] = [true; 3];
 
-/// Carpetas a omitir de partida (valor por defecto y al pulsar "Limpiar"):
+/// Carpetas a omitir de partida (valor por defecto y al pulsar "Restablecer"):
 /// las comunes de proyectos de código, que casi nunca interesan en un
 /// inventario. La CLI, en cambio, no omite nada si no se le pide.
 fn default_exclude_dirs() -> String {
@@ -119,6 +119,8 @@ struct App {
     /// Últimas carpetas escaneadas, la más reciente primero (ver
     /// `util::push_recent`).
     recent_inputs: Vec<String>,
+    /// Cuáles de `recent_inputs` siguen existiendo (ver `RecentCheck`).
+    recent_check: RecentCheck,
     /// Tema elegido en la cabecera (por defecto, el del sistema).
     theme: ThemeChoice,
     /// Reenvíos del tema a la barra de título ya hechos al arrancar y
@@ -155,6 +157,13 @@ struct App {
 
     /// Si "Opciones" ya se forzó plegado al arrancar (ver `render_options`).
     options_initialized: bool,
+
+    /// Si se pide confirmación antes de reemplazar reportes existentes. Se
+    /// desactiva con "No volver a preguntar" y se reactiva en Opciones.
+    ask_before_overwrite: bool,
+    /// Casilla "No volver a preguntar" del diálogo abierto (solo se aplica
+    /// al pulsar "Actualizar reportes").
+    dont_ask_checked: bool,
 }
 
 /// Qué se copió desde el modal de resultado.
@@ -190,6 +199,9 @@ struct PersistedState {
     /// Últimas carpetas escaneadas (vacío en estados de versiones
     /// anteriores).
     recent_inputs: Vec<String>,
+    /// Preguntar antes de reemplazar reportes (sí, en estados de versiones
+    /// anteriores).
+    ask_before_overwrite: bool,
 }
 
 impl Default for PersistedState {
@@ -203,6 +215,7 @@ impl Default for PersistedState {
             formats: ALL_FORMATS,
             theme: ThemeChoice::System,
             recent_inputs: Vec::new(),
+            ask_before_overwrite: true,
         }
     }
 }
@@ -223,6 +236,7 @@ impl App {
             formats: state.formats,
             theme: state.theme,
             recent_inputs: state.recent_inputs,
+            ask_before_overwrite: state.ask_before_overwrite,
             ..App::default()
         }
     }
@@ -324,7 +338,7 @@ impl App {
                     ui.add_space(16.0);
                     ui.vertical(|ui| {
                         ui.label(
-                            egui::RichText::new("📋  File Reporter")
+                            egui::RichText::new("File Reporter")
                                 .size(20.0)
                                 .strong(),
                         );
@@ -474,6 +488,7 @@ impl App {
                             self.render_actions(ui);
                             ui.add_space(8.0);
                             self.render_progress(ui);
+                            self.render_drop_zone(ui);
                             ui.add_space(12.0);
                         });
                     });
@@ -491,6 +506,7 @@ impl eframe::App for App {
 
         self.input_check.refresh(&self.input_path, ctx);
         self.output_check.refresh(&self.output_path, ctx);
+        self.recent_check.refresh(&self.recent_inputs, ctx);
         self.sync_native_theme(ctx);
         self.expire_messages(ctx);
         self.poll_worker(ctx);
@@ -518,6 +534,7 @@ impl eframe::App for App {
             formats: self.formats,
             theme: self.theme,
             recent_inputs: self.recent_inputs.clone(),
+            ask_before_overwrite: self.ask_before_overwrite,
         };
         eframe::set_value(storage, PERSIST_KEY, &state);
     }
@@ -540,6 +557,7 @@ mod tests {
         assert_eq!(state.theme, ThemeChoice::System);
         assert_eq!(state.input_path, "C:\\x");
         assert!(state.recent_inputs.is_empty());
+        assert!(state.ask_before_overwrite);
     }
 
     #[test]
