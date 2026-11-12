@@ -3,6 +3,7 @@
 
 mod cli;
 mod gui;
+mod icon;
 mod models;
 mod reporters;
 mod runner;

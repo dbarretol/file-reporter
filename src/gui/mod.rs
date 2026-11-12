@@ -30,7 +30,14 @@ pub fn launch() -> Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([980.0, 640.0]) // ancho suficiente para MAX_CONTENT_WIDTH (900) + márgenes
             .with_min_inner_size([720.0, 500.0]) // mínimo cómodo
-            .with_title("File Reporter"),
+            .with_title("File Reporter")
+            // Icono de la ventana y de la barra de tareas (el del .exe en el
+            // Explorador lo incrusta build.rs, con el mismo dibujo).
+            .with_icon(egui::IconData {
+                rgba: crate::icon::rgba(APP_ICON_SIZE),
+                width: APP_ICON_SIZE,
+                height: APP_ICON_SIZE,
+            }),
         centered: true, // abre centrada en la pantalla (cuando el OS lo permite)
         ..Default::default()
     };
@@ -46,6 +53,10 @@ pub fn launch() -> Result<()> {
     )
     .map_err(|e| anyhow::anyhow!("Error iniciando GUI: {e}"))
 }
+
+/// Tamaño del icono de la ventana; el sistema lo reduce para la barra de
+/// título y la de tareas.
+const APP_ICON_SIZE: u32 = 256;
 
 /// Ajustes visuales globales (espaciado, tipografía, etc.).
 fn setup_custom_style(ctx: &egui::Context) {
