@@ -7,8 +7,10 @@ on:
   push:
     tags: ["v*"]
 
+# Solo lectura por defecto; el permiso de escritura (crear el Release) lo
+# tiene únicamente el trabajo `release`, no los que compilan.
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -69,6 +71,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
 
@@ -76,6 +80,14 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      - name: Checksums
+        # Sumas SHA256 de los ejecutables, para comprobar la descarga:
+        # `sha256sum -c SHA256SUMS.txt` (Linux) o `Get-FileHash` (Windows).
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Release notes from CHANGELOG.md
         run: |

@@ -4,6 +4,10 @@ Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https
 
 ## [Sin publicar]
 
+### Añadido
+
+- **Sumas SHA256 en cada Release** (`SHA256SUMS.txt`), para comprobar que el ejecutable descargado está íntegro. El README explica cómo hacerlo en Windows y Linux ([#77](https://github.com/dbarretol/file-reporter/issues/77)).
+
 ### Corregido
 
 - **Fechas en hora local:** `report.csv` calculaba `created` y `modified` en UTC, así que fuera de UTC un archivo podía salir con otra fecha que la del explorador de archivos (en UTC-5, todo lo modificado desde las 19:00 aparecía con la fecha del día siguiente). Ahora las fechas usan la hora local del equipo. Las columnas `created_iso`/`modified_iso` y las fechas de `report.json` pasan a llevar el desfase local (`2026-11-11T21:30:00-05:00`) en vez de UTC (`2026-11-12T02:30:00+00:00`): es el mismo instante, y cualquier lector de ISO-8601 lo interpreta igual ([#72](https://github.com/dbarretol/file-reporter/issues/72)).
