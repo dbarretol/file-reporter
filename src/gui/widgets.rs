@@ -80,7 +80,7 @@ pub(super) fn result_row(
     action
 }
 
-/// Título de un panel de resultado: icono + texto, ambos en `color`.
+/// Título del resultado de una corrida: icono + texto, ambos en `color`.
 pub(super) fn panel_title(ui: &mut egui::Ui, color: egui::Color32, icon: &str, text: &str) {
     ui.horizontal(|ui| {
         ui.colored_label(color, egui::RichText::new(icon).size(16.0));
