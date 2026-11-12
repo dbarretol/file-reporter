@@ -133,11 +133,7 @@ pub fn run_with_progress(cfg: &RunConfig, show: bool) -> Result<RunSummary> {
         // `done_tx` el canal se cierra y `recv_timeout` deja de esperar).
         let (bar, watched) = (&bar, progress.clone());
         s.spawn(move || loop {
-            bar.set_message(progress_message(
-                watched.done.load(Ordering::Relaxed),
-                watched.writing.load(Ordering::Relaxed),
-                cfg.dirs_only,
-            ));
+            bar.set_message(progress_message(&watched, cfg.dirs_only));
             if done_rx.recv_timeout(SPINNER_TICK) != Err(mpsc::RecvTimeoutError::Timeout) {
                 break;
             }
@@ -151,12 +147,17 @@ pub fn run_with_progress(cfg: &RunConfig, show: bool) -> Result<RunSummary> {
 }
 
 /// Texto del spinner según la fase en curso.
-fn progress_message(found: usize, writing: bool, dirs_only: bool) -> String {
-    let noun = runner::found_noun(dirs_only);
-    if writing {
+fn progress_message(progress: &Progress, dirs_only: bool) -> String {
+    let found = progress.done.load(Ordering::Relaxed);
+    if progress.writing.load(Ordering::Relaxed) {
+        let noun = runner::found_noun(dirs_only);
         format!("Escribiendo reportes… ({found} {noun})")
     } else {
-        format!("Escaneando… {found} {noun}")
+        let dirs = progress.dirs_scanned.load(Ordering::Relaxed);
+        format!(
+            "Escaneando… {}",
+            runner::scan_status(found, dirs, dirs_only)
+        )
     }
 }
 
@@ -166,16 +167,20 @@ mod tests {
 
     #[test]
     fn progress_message_shows_phase_and_noun() {
+        let p = Progress::default();
+        p.done.store(42, Ordering::Relaxed);
+        p.dirs_scanned.store(9, Ordering::Relaxed);
         assert_eq!(
-            progress_message(42, false, false),
-            "Escaneando… 42 archivos encontrados"
+            progress_message(&p, false),
+            "Escaneando… 42 archivos encontrados · 9 carpetas revisadas"
         );
         assert_eq!(
-            progress_message(7, false, true),
-            "Escaneando… 7 carpetas encontradas"
+            progress_message(&p, true),
+            "Escaneando… 42 carpetas encontradas"
         );
+        p.writing.store(true, Ordering::Relaxed);
         assert_eq!(
-            progress_message(42, true, false),
+            progress_message(&p, false),
             "Escribiendo reportes… (42 archivos encontrados)"
         );
     }
