@@ -78,6 +78,7 @@ C:\Demo\Proyecto
 - 🛡️ Sigue funcionando ante carpetas sin permisos y avisa cuántos elementos se omitieron (con `-v`, cuáles y por qué).
 - 🔁 Detecta symlinks y junctions cíclicos para no quedarse colgado.
 - 🔒 CSV protegido contra *formula injection*.
+- 💾 Escritura segura: si algo falla al guardar un reporte (disco lleno, archivo abierto en Excel…), el anterior queda intacto.
 
 **Línea de comandos**
 - ⏳ Contador de archivos encontrados, carpetas revisadas y tiempo transcurrido mientras escanea (se oculta si la salida se redirige).
