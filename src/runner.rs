@@ -5,6 +5,8 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
+use tracing::debug;
 
 /// Formato de reporte que se puede generar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -267,6 +269,8 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
 
     let cancel_flag = progress.as_ref().map(|p| &p.cancel);
     let skipped = AtomicUsize::new(0);
+    debug!(?cfg, "Inicio del escaneo");
+    let scan_start = Instant::now();
 
     // No hacemos una pasada previa solo para contar archivos: eso implicaría
     // leer el disco dos veces (una para contar, otra para construir el
@@ -301,6 +305,13 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     let (files_count, total_bytes) = scanner::file_totals(&tree);
     let dirs_count = scanner::count_dirs(&tree);
     let ext_stats = scanner::extension_stats(&tree);
+    debug!(
+        files_count,
+        dirs_count,
+        skipped = skipped.load(Ordering::Relaxed),
+        elapsed = ?scan_start.elapsed(),
+        "Escaneo terminado"
+    );
 
     // Asegurar que el contador refleje la realidad final (en modo solo
     // carpetas el progreso cuenta carpetas, no archivos)
@@ -335,6 +346,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         })?;
 
         for (format, path) in &reports {
+            debug!("Escribiendo {}", path.display());
             match format {
                 ReportFormat::Csv => reporters::csv::write_csv(&tree, path)?,
                 ReportFormat::Md => reporters::markdown::write_markdown(&tree, &ext_stats, path)?,

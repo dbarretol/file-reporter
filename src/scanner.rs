@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use tracing::{debug, info, warn};
 
 /// `true` si dos nombres o rutas designan lo mismo en el sistema de archivos.
 ///
@@ -230,29 +231,44 @@ fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
     match fs::read_dir(path) {
         Ok(entries) => {
             for entry in entries {
-                let Ok(entry) = entry else {
-                    Scan::bump(scan.skipped);
-                    continue;
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(e) => {
+                        warn!("Entrada ilegible en {}: {e}", path.display());
+                        Scan::bump(scan.skipped);
+                        continue;
+                    }
                 };
                 let name = entry.file_name().to_string_lossy().into_owned();
                 let entry_path = entry.path();
                 if scan.exclusions.contains(&name, &entry_path) {
+                    debug!(
+                        "Omitido (reporte o carpeta de salida): {}",
+                        entry_path.display()
+                    );
                     continue;
                 }
-                let Ok(file_type) = entry.file_type() else {
-                    Scan::bump(scan.skipped);
-                    continue;
+                let file_type = match entry.file_type() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        warn!("Sin acceso a {}: {e}", entry_path.display());
+                        Scan::bump(scan.skipped);
+                        continue;
+                    }
                 };
                 if file_type.is_symlink() {
                     // Symlinks y junctions descendientes no se siguen: evita
                     // recursión infinita en ciclos. Omisión intencional, no
                     // cuenta como error.
+                    info!("Enlace no seguido: {}", entry_path.display());
                     continue;
                 }
                 if file_type.is_dir() {
                     // Excluida por nombre (`.git`, `node_modules`…): ni se
                     // abre. Omisión intencional, no cuenta como error.
-                    if !scan.is_excluded_dir(&name) {
+                    if scan.is_excluded_dir(&name) {
+                        info!("Carpeta omitida por nombre: {}", entry_path.display());
+                    } else {
                         subdirs.push(entry_path);
                     }
                     continue;
@@ -268,13 +284,17 @@ fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
                         Scan::bump(scan.counter);
                         children.push(file_node(name, entry_path, &metadata));
                     }
-                    Err(_) => Scan::bump(scan.skipped),
+                    Err(e) => {
+                        warn!("Sin acceso a {}: {e}", entry_path.display());
+                        Scan::bump(scan.skipped);
+                    }
                 }
             }
         }
-        Err(_) => {
+        Err(e) => {
             // Sin permisos -> no podemos listar el contenido; queda como
             // carpeta vacía en el árbol, pero contamos la pérdida.
+            warn!("No se pudo leer la carpeta {}: {e}", path.display());
             Scan::bump(scan.skipped);
         }
     }
