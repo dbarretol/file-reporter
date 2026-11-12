@@ -7,6 +7,8 @@ use super::widgets::{field_note, folder_row};
 use super::{default_exclude_dirs, App, ALL_FORMATS};
 use crate::runner::{self, ReportFormat};
 use eframe::egui;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::time::{Duration, Instant};
 
 /// Sugerencias rápidas del campo de extensiones.
 const EXTENSION_PRESETS: [&str; 4] = [
@@ -17,40 +19,101 @@ const EXTENSION_PRESETS: [&str; 4] = [
 ];
 
 /// Qué hay en disco en la ruta que escribió el usuario.
-#[derive(Default, Clone, Copy, PartialEq)]
+#[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub(super) enum PathStatus {
     #[default]
     Empty,
+    /// Texto nuevo aún sin consultar (ver `PathCheck`).
+    Checking,
     Missing,
     NotDir,
     Dir,
 }
 
-/// Estado de una ruta del formulario, recalculado solo cuando cambia el
-/// texto: consultar el disco en cada frame sería costoso con unidades de
-/// red lentas.
+/// Tiempo sin cambios en el texto antes de consultar el disco.
+const PATH_CHECK_DEBOUNCE: Duration = Duration::from_millis(300);
+/// Cada cuánto se mira si terminó una consulta en curso.
+const PATH_CHECK_POLL: Duration = Duration::from_millis(50);
+
+/// Estado de una ruta del formulario. El disco se consulta en otro hilo y
+/// solo cuando el texto lleva `PATH_CHECK_DEBOUNCE` sin cambiar: en una
+/// ruta de red (`\\servidor\…`) cada consulta puede tardar segundos, y
+/// hacerla en el hilo de la interfaz a cada pulsación congelaba la ventana
+/// mientras se escribía.
 #[derive(Default)]
 pub(super) struct PathCheck {
-    text: Option<String>,
+    /// Texto al que corresponde `status`.
+    checked: Option<String>,
     status: PathStatus,
+    /// Texto nuevo y desde cuándo no cambia.
+    waiting: Option<(String, Instant)>,
+    /// Consulta en curso: texto y canal por el que llegará el resultado.
+    running: Option<(String, Receiver<PathStatus>)>,
 }
 
 impl PathCheck {
-    pub fn refresh(&mut self, raw: &str) -> PathStatus {
-        let cleaned = clean_path_input(raw);
-        if self.text.as_deref() != Some(cleaned) {
-            let path = std::path::Path::new(cleaned);
-            self.status = if cleaned.is_empty() {
-                PathStatus::Empty
-            } else if path.is_dir() {
-                PathStatus::Dir
-            } else if path.exists() {
-                PathStatus::NotDir
-            } else {
-                PathStatus::Missing
-            };
-            self.text = Some(cleaned.to_string());
+    /// Se llama en cada frame con el texto del campo. Devuelve el estado
+    /// conocido; mientras el texto cambia o se consulta, `Checking`.
+    pub fn refresh(&mut self, raw: &str, ctx: &egui::Context) -> PathStatus {
+        let text = clean_path_input(raw);
+
+        if let Some((asked, rx)) = &self.running {
+            match rx.try_recv() {
+                Ok(status) => {
+                    // Un resultado de un texto que ya cambió se descarta.
+                    if asked == text {
+                        self.status = status;
+                        self.checked = Some(asked.clone());
+                    }
+                    self.running = None;
+                }
+                Err(TryRecvError::Empty) => ctx.request_repaint_after(PATH_CHECK_POLL),
+                Err(TryRecvError::Disconnected) => self.running = None,
+            }
         }
+
+        if self.checked.as_deref() == Some(text) {
+            self.waiting = None;
+            return self.status;
+        }
+        if text.is_empty() {
+            self.status = PathStatus::Empty;
+            self.checked = Some(String::new());
+            self.waiting = None;
+            return self.status;
+        }
+        if self
+            .running
+            .as_ref()
+            .is_some_and(|(asked, _)| asked == text)
+        {
+            return self.status;
+        }
+
+        // Texto nuevo: esperar a que deje de cambiar antes de ir al disco.
+        let since = match &self.waiting {
+            Some((t, at)) if t == text => *at,
+            _ => {
+                self.status = PathStatus::Checking;
+                let now = Instant::now();
+                self.waiting = Some((text.to_string(), now));
+                now
+            }
+        };
+        let left = PATH_CHECK_DEBOUNCE.saturating_sub(since.elapsed());
+        if !left.is_zero() {
+            ctx.request_repaint_after(left);
+            return self.status;
+        }
+
+        self.waiting = None;
+        let (tx, rx) = mpsc::channel();
+        let path = text.to_string();
+        std::thread::spawn(move || {
+            let _ = tx.send(disk_status(&path));
+        });
+        self.running = Some((text.to_string(), rx));
+        ctx.request_repaint_after(PATH_CHECK_POLL);
         self.status
     }
 
@@ -58,10 +121,28 @@ impl PathCheck {
         self.status
     }
 
-    /// Fuerza a volver a consultar el disco la próxima vez (p. ej. al
-    /// lanzar una corrida, por si la carpeta cambió sin tocar el texto).
+    /// Vuelve a consultar el disco cuanto antes (p. ej. al terminar una
+    /// corrida, que pudo crear la carpeta de salida), sin esperar ni pasar
+    /// por `Checking`: hasta que llegue la respuesta vale el estado anterior.
     pub fn invalidate(&mut self) {
-        self.text = None;
+        if let Some(text) = self.checked.take() {
+            let past = Instant::now()
+                .checked_sub(PATH_CHECK_DEBOUNCE)
+                .unwrap_or_else(Instant::now);
+            self.waiting = Some((text, past));
+        }
+    }
+}
+
+/// Qué hay en disco en `path` (no vacío).
+fn disk_status(path: &str) -> PathStatus {
+    let path = std::path::Path::new(path);
+    if path.is_dir() {
+        PathStatus::Dir
+    } else if path.exists() {
+        PathStatus::NotDir
+    } else {
+        PathStatus::Missing
     }
 }
 
@@ -91,7 +172,7 @@ impl App {
                     || rfd::FileDialog::new().pick_folder(),
                 );
                 match self.input_check.status() {
-                    PathStatus::Empty => {}
+                    PathStatus::Empty | PathStatus::Checking => {}
                     // El campo corta las rutas largas por el final, que es
                     // lo que identifica la carpeta: se repite aquí.
                     PathStatus::Dir => field_note(
@@ -320,13 +401,16 @@ impl App {
         }
         match self.input_check.status() {
             PathStatus::Empty => return Some("Elige primero la carpeta a escanear."),
+            PathStatus::Checking => return Some("Comprobando la carpeta a escanear…"),
             PathStatus::Missing | PathStatus::NotDir => {
                 return Some("La carpeta a escanear no es válida.")
             }
             PathStatus::Dir => {}
         }
-        if self.output_check.status() == PathStatus::NotDir {
-            return Some("La carpeta de salida no es válida.");
+        match self.output_check.status() {
+            PathStatus::NotDir => return Some("La carpeta de salida no es válida."),
+            PathStatus::Checking => return Some("Comprobando la carpeta de salida…"),
+            _ => {}
         }
         if !self.formats.contains(&true) {
             return Some("Elige al menos un formato.");
@@ -481,6 +565,59 @@ fn toggle_preset(field: &str, preset: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Llama a `refresh` hasta que el estado deja de ser `Checking`.
+    fn settle(check: &mut PathCheck, text: &str, ctx: &egui::Context) -> PathStatus {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let status = check.refresh(text, ctx);
+            if status != PathStatus::Checking || Instant::now() > deadline {
+                return status;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn path_check_waits_and_then_asks_the_disk() {
+        let ctx = egui::Context::default();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_text = dir.path().display().to_string();
+        let mut check = PathCheck::default();
+
+        assert_eq!(check.refresh("", &ctx), PathStatus::Empty);
+        // Texto nuevo: no va al disco enseguida.
+        assert_eq!(check.refresh(&dir_text, &ctx), PathStatus::Checking);
+        assert_eq!(settle(&mut check, &dir_text, &ctx), PathStatus::Dir);
+
+        let missing = dir.path().join("no_existe").display().to_string();
+        assert_eq!(settle(&mut check, &missing, &ctx), PathStatus::Missing);
+
+        let file = dir.path().join("a.txt");
+        std::fs::write(&file, "x").unwrap();
+        let file_text = file.display().to_string();
+        assert_eq!(settle(&mut check, &file_text, &ctx), PathStatus::NotDir);
+    }
+
+    #[test]
+    fn path_check_invalidate_rechecks_without_flashing_checking() {
+        let ctx = egui::Context::default();
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("salida");
+        let out_text = out.display().to_string();
+        let mut check = PathCheck::default();
+        assert_eq!(settle(&mut check, &out_text, &ctx), PathStatus::Missing);
+
+        std::fs::create_dir(&out).unwrap();
+        check.invalidate();
+        // Hasta que llega la respuesta se conserva el estado anterior.
+        assert_eq!(check.refresh(&out_text, &ctx), PathStatus::Missing);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while check.refresh(&out_text, &ctx) != PathStatus::Dir && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(check.status(), PathStatus::Dir);
+    }
 
     fn app_with(extensions: &str, exclude: &str, dirs_only: bool, formats: [bool; 3]) -> App {
         App {

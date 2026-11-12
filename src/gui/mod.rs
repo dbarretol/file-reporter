@@ -489,8 +489,8 @@ impl eframe::App for App {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
 
-        self.input_check.refresh(&self.input_path);
-        self.output_check.refresh(&self.output_path);
+        self.input_check.refresh(&self.input_path, ctx);
+        self.output_check.refresh(&self.output_path, ctx);
         self.sync_native_theme(ctx);
         self.expire_messages(ctx);
         self.poll_worker(ctx);
