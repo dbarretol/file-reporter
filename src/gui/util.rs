@@ -35,6 +35,10 @@ pub(super) fn truncate_path_display(s: &str, max_chars: usize) -> String {
 }
 
 pub(super) fn fmt_seconds(s: f32) -> String {
+    // "0s" en un escaneo rápido parecía un error.
+    if s < 1.0 {
+        return "<1 s".to_string();
+    }
     let s = s as u64;
     let h = s / 3600;
     let m = (s % 3600) / 60;
@@ -188,7 +192,9 @@ mod tests {
 
     #[test]
     fn fmt_seconds_boundaries() {
-        assert_eq!(fmt_seconds(0.0), "0s");
+        assert_eq!(fmt_seconds(0.0), "<1 s");
+        assert_eq!(fmt_seconds(0.4), "<1 s");
+        assert_eq!(fmt_seconds(1.0), "1s");
         assert_eq!(fmt_seconds(59.0), "59s");
         assert_eq!(fmt_seconds(60.0), "1m 00s");
         assert_eq!(fmt_seconds(3599.0), "59m 59s");

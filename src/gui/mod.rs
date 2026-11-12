@@ -272,11 +272,13 @@ impl App {
                 i.key_pressed(egui::Key::Escape),
             )
         });
+        // Enter en un campo de texto solo lo "confirma": no lanza el escaneo.
+        let typing = ctx.memory(|m| m.focused().is_some());
         if self.results_visible() {
             if enter {
                 self.results_open = false;
             }
-        } else if enter && self.can_run() {
+        } else if enter && !typing && self.can_run() {
             self.request_run();
         }
         if esc && self.is_running() {
@@ -414,6 +416,14 @@ impl App {
                     };
                     ui.colored_label(color, icon);
                     ui.colored_label(color, text.as_ref());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(12.0);
+                        ui.label(
+                            egui::RichText::new(concat!("v", env!("CARGO_PKG_VERSION")))
+                                .color(palette.muted)
+                                .size(11.0),
+                        );
+                    });
                 });
             });
     }

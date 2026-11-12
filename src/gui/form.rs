@@ -67,30 +67,41 @@ impl PathCheck {
 
 impl App {
     /// ─── Sección: Formulario de entrada ──────────────────────────
+    /// Arriba lo imprescindible (carpeta a escanear y de salida); el resto,
+    /// en "Opciones", plegado por defecto y con un resumen de una línea.
     pub(super) fn render_form(&mut self, ui: &mut egui::Ui) {
         let palette = Palette::of(ui);
         let enabled = !self.is_busy();
-        // En modo solo carpetas las extensiones no tienen efecto.
-        let ext_enabled = enabled && !self.dirs_only;
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
-                ui.label(egui::RichText::new("Configuración").strong().size(14.0));
-                ui.add_space(6.0);
-
                 // Carpeta a escanear
-                ui.label(egui::RichText::new("📁  Carpeta a escanear").size(12.0));
+                ui.label(
+                    egui::RichText::new("Carpeta a escanear")
+                        .strong()
+                        .size(13.0),
+                );
                 folder_row(
                     ui,
                     &mut self.input_path,
                     enabled,
-                    "Selecciona la carpeta…",
+                    "Selecciona la carpeta o arrástrala a la ventana…",
                     &self.recent_inputs,
                     || rfd::FileDialog::new().pick_folder(),
                 );
                 match self.input_check.status() {
-                    PathStatus::Empty | PathStatus::Dir => {}
+                    PathStatus::Empty => {}
+                    // El campo corta las rutas largas por el final, que es
+                    // lo que identifica la carpeta: se repite aquí.
+                    PathStatus::Dir => field_note(
+                        ui,
+                        palette.muted,
+                        &format!(
+                            "Se escaneará: {}",
+                            path_tail(clean_path_input(&self.input_path))
+                        ),
+                    ),
                     PathStatus::Missing => field_note(ui, palette.error, "✖ La ruta no existe"),
                     PathStatus::NotDir => {
                         field_note(ui, palette.error, "✖ Es un archivo, no una carpeta")
@@ -100,12 +111,12 @@ impl App {
                 ui.add_space(8.0);
 
                 // Carpeta de salida
-                ui.label(egui::RichText::new("💾  Carpeta de salida").size(12.0));
+                ui.label(egui::RichText::new("Carpeta de salida").strong().size(13.0));
                 folder_row(
                     ui,
                     &mut self.output_path,
                     enabled,
-                    "Por defecto: misma que la entrada",
+                    "Por defecto: la carpeta escaneada",
                     &[],
                     || rfd::FileDialog::new().pick_folder(),
                 );
@@ -120,122 +131,177 @@ impl App {
                         palette.muted,
                         "La carpeta no existe: se creará al generar los reportes",
                     ),
-                    (PathStatus::Empty, PathStatus::Dir) => field_note(
+                    (PathStatus::Dir, _) => field_note(
                         ui,
                         palette.muted,
                         &format!(
-                            "Los reportes se guardarán en la carpeta escaneada: {}",
-                            clean_path_input(&self.input_path)
+                            "Los reportes se guardarán en: {}",
+                            path_tail(clean_path_input(&self.output_path))
                         ),
+                    ),
+                    (PathStatus::Empty, PathStatus::Dir) => field_note(
+                        ui,
+                        palette.muted,
+                        "Los reportes se guardarán en la carpeta escaneada",
                     ),
                     _ => {}
                 }
 
                 ui.add_space(8.0);
-
-                // Extensiones
-                ui.label(egui::RichText::new("🎯  Extensiones (separadas por coma)").size(12.0));
-                let ext_width = ui.available_width().max(120.0);
-                ui.add_enabled(
-                    ext_enabled,
-                    egui::TextEdit::singleline(&mut self.extensions)
-                        .hint_text("pdf, docx, jpg  (vacío = todas)")
-                        .desired_width(ext_width),
-                )
-                .on_disabled_hover_text("Sin efecto en modo solo carpetas.")
-                .on_hover_text(
-                    "Ej.: pdf, docx. Vacío = todas.\n\
-                     Cuenta lo que va tras el último punto: \"foo.tar.gz\" es gz.",
-                );
-
-                // Sugerencias rápidas: cada una se suma a lo escrito (o se
-                // quita, si ya estaba entera), en vez de reemplazarlo.
-                ui.add_space(4.0);
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        egui::RichText::new("Sugerencias:")
-                            .color(palette.muted)
-                            .size(11.0),
-                    );
-                    for preset in EXTENSION_PRESETS {
-                        let active = preset_is_active(&self.extensions, preset);
-                        if ui
-                            .add_enabled(
-                                ext_enabled,
-                                egui::Button::new(egui::RichText::new(preset).size(11.0))
-                                    .small()
-                                    .selected(active),
-                            )
-                            .on_hover_text(if active { "Quitar" } else { "Añadir" })
-                            .clicked()
-                        {
-                            self.extensions = toggle_preset(&self.extensions, preset);
-                        }
-                    }
-                });
-
-                ui.add_space(8.0);
-
-                // Carpetas a omitir por nombre
-                ui.label(
-                    egui::RichText::new("🚫  Carpetas a omitir (separadas por coma)").size(12.0),
-                );
-                ui.add_enabled(
-                    enabled,
-                    egui::TextEdit::singleline(&mut self.exclude_dirs)
-                        .hint_text(".git, node_modules  (vacío = ninguna)")
-                        .desired_width(ui.available_width().max(120.0)),
-                )
-                .on_hover_text(
-                    "Nombres de carpeta, no rutas: se omiten en cualquier\n\
-                     nivel, con todo su contenido.",
-                );
-                ui.add_space(4.0);
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        egui::RichText::new("Sugerencias:")
-                            .color(palette.muted)
-                            .size(11.0),
-                    );
-                    let common = runner::COMMON_EXCLUDED_DIRS.join(", ");
-                    let active = names_active(&self.exclude_dirs, &common, dir_list);
-                    if ui
-                        .add_enabled(
-                            enabled,
-                            egui::Button::new(
-                                egui::RichText::new("Carpetas de proyectos").size(11.0),
-                            )
-                            .small()
-                            .selected(active),
-                        )
-                        .on_hover_text(format!(
-                            "{}: {common}",
-                            if active { "Quitar" } else { "Añadir" }
-                        ))
-                        .clicked()
-                    {
-                        self.exclude_dirs = toggle_names(&self.exclude_dirs, &common, dir_list);
-                    }
-                });
-
-                ui.add_space(8.0);
-                ui.add_enabled(
-                    enabled,
-                    egui::Checkbox::new(&mut self.dirs_only, "📂 Solo carpetas (omitir archivos)"),
-                );
-
-                // Formatos a generar
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("📄  Generar:").size(12.0));
-                    for (format, on) in ReportFormat::ALL.iter().zip(self.formats.iter_mut()) {
-                        ui.add_enabled(enabled, egui::Checkbox::new(on, format.label()));
-                    }
-                });
+                self.render_options(ui, &palette, enabled);
+                // Fuera del plegable: con "Opciones" cerrado también se ve.
                 if !self.formats.contains(&true) {
-                    field_note(ui, palette.error, "✖ Elige al menos un formato");
+                    field_note(ui, palette.error, "✖ Elige al menos un formato en Opciones");
                 }
             });
+    }
+
+    /// "Opciones": extensiones, carpetas a omitir, solo carpetas y formatos.
+    /// Plegado muestra un resumen de lo elegido.
+    fn render_options(&mut self, ui: &mut egui::Ui, palette: &Palette, enabled: bool) {
+        // En modo solo carpetas las extensiones no tienen efecto.
+        let ext_enabled = enabled && !self.dirs_only;
+        let summary = self.options_summary();
+        let header = egui::CollapsingHeader::new(
+            egui::RichText::new(format!("Opciones  ·  {summary}")).size(13.0),
+        )
+        .id_salt("options")
+        .default_open(false);
+        header.show(ui, |ui| {
+            ui.add_space(4.0);
+            // Extensiones
+            ui.label(egui::RichText::new("Extensiones (separadas por coma)").size(12.0));
+            let ext_width = ui.available_width().max(120.0);
+            ui.add_enabled(
+                ext_enabled,
+                egui::TextEdit::singleline(&mut self.extensions)
+                    .hint_text("pdf, docx, jpg  (vacío = todas)")
+                    .desired_width(ext_width),
+            )
+            .on_disabled_hover_text("Sin efecto en modo solo carpetas.")
+            .on_hover_text(
+                "Ej.: pdf, docx. Vacío = todas.\n\
+                 Cuenta lo que va tras el último punto: \"foo.tar.gz\" es gz.",
+            );
+
+            // Sugerencias rápidas: cada una se suma a lo escrito (o se
+            // quita, si ya estaba entera), en vez de reemplazarlo.
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new("Sugerencias:")
+                        .color(palette.muted)
+                        .size(11.0),
+                );
+                for preset in EXTENSION_PRESETS {
+                    let active = preset_is_active(&self.extensions, preset);
+                    if ui
+                        .add_enabled(
+                            ext_enabled,
+                            egui::Button::new(egui::RichText::new(preset).size(11.0))
+                                .small()
+                                .selected(active),
+                        )
+                        .on_hover_text(if active { "Quitar" } else { "Añadir" })
+                        .clicked()
+                    {
+                        self.extensions = toggle_preset(&self.extensions, preset);
+                    }
+                }
+            });
+
+            ui.add_space(8.0);
+
+            // Carpetas a omitir por nombre
+            ui.label(egui::RichText::new("Carpetas a omitir (separadas por coma)").size(12.0));
+            ui.add_enabled(
+                enabled,
+                egui::TextEdit::singleline(&mut self.exclude_dirs)
+                    .hint_text(".git, node_modules  (vacío = ninguna)")
+                    .desired_width(ui.available_width().max(120.0)),
+            )
+            .on_hover_text(
+                "Nombres de carpeta, no rutas: se omiten en cualquier\n\
+                 nivel, con todo su contenido.",
+            );
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new("Sugerencias:")
+                        .color(palette.muted)
+                        .size(11.0),
+                );
+                let common = runner::COMMON_EXCLUDED_DIRS.join(", ");
+                let active = names_active(&self.exclude_dirs, &common, dir_list);
+                if ui
+                    .add_enabled(
+                        enabled,
+                        egui::Button::new(egui::RichText::new("Carpetas de proyectos").size(11.0))
+                            .small()
+                            .selected(active),
+                    )
+                    .on_hover_text(format!(
+                        "{}: {common}",
+                        if active { "Quitar" } else { "Añadir" }
+                    ))
+                    .clicked()
+                {
+                    self.exclude_dirs = toggle_names(&self.exclude_dirs, &common, dir_list);
+                }
+            });
+
+            ui.add_space(8.0);
+            ui.add_enabled(
+                enabled,
+                egui::Checkbox::new(&mut self.dirs_only, "Solo carpetas (omitir archivos)"),
+            );
+
+            // Formatos a generar
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Generar:").size(12.0));
+                for (format, on) in ReportFormat::ALL.iter().zip(self.formats.iter_mut()) {
+                    ui.add_enabled(enabled, egui::Checkbox::new(on, format.label()));
+                }
+            });
+        });
+    }
+
+    /// Resumen de una línea de "Opciones", p. ej. "Todas las extensiones ·
+    /// omite 7 carpetas · CSV + MD + JSON".
+    fn options_summary(&self) -> String {
+        let what = if self.dirs_only {
+            "Solo carpetas".to_string()
+        } else {
+            let exts = ext_list(&self.extensions);
+            if exts.is_empty() {
+                "Todas las extensiones".to_string()
+            } else {
+                exts.join(", ")
+            }
+        };
+        let dirs = dir_list(&self.exclude_dirs).len();
+        let omit = match dirs {
+            0 => "sin carpetas omitidas".to_string(),
+            1 => "omite 1 carpeta".to_string(),
+            n => format!("omite {n} carpetas"),
+        };
+        let formats: Vec<&str> = ReportFormat::ALL
+            .iter()
+            .zip(self.formats)
+            .filter(|(_, on)| *on)
+            .map(|(f, _)| match f {
+                ReportFormat::Csv => "CSV",
+                ReportFormat::Md => "MD",
+                ReportFormat::Json => "JSON",
+            })
+            .collect();
+        let formats = if formats.is_empty() {
+            "ningún formato".to_string()
+        } else {
+            formats.join(" + ")
+        };
+        format!("{what}  ·  {omit}  ·  {formats}")
     }
 
     /// Por qué no se puede lanzar un escaneo ahora mismo, o `None` si se
@@ -340,6 +406,26 @@ impl App {
         self.results_open = false;
         self.copied = None;
         self.clear_ui_error();
+    }
+}
+
+/// Últimos dos componentes de una ruta (`…\review\in`), la parte que la
+/// identifica y que el campo de texto corta cuando es larga.
+fn path_tail(path: &str) -> String {
+    let p = std::path::Path::new(path);
+    let mut parts: Vec<String> = p
+        .components()
+        .rev()
+        .take(2)
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    parts.reverse();
+    let sep = std::path::MAIN_SEPARATOR.to_string();
+    let tail = parts.join(&sep);
+    if p.components().count() > 2 {
+        format!("…{sep}{tail}")
+    } else {
+        path.to_string()
     }
 }
 
