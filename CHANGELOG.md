@@ -2,6 +2,14 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Añadido
+
+- **Carpetas omitidas por nombre en el resultado:** la ventana de resultado y la salida de la CLI dicen cuántas carpetas se omitieron por nombre y cuáles, p. ej. "3 carpetas omitidas por nombre (.git, build ×2)". Antes una carpeta `build` o `dist` con contenido propio podía quedar fuera del reporte sin aviso ([#47](https://github.com/dbarretol/file-reporter/issues/47)).
+- **GUI: lista de elementos no accesibles:** el aviso "N elementos no accesibles fueron omitidos" se despliega para ver cuáles (hasta 200) y el motivo de cada uno, con un botón "Copiar lista" ([#48](https://github.com/dbarretol/file-reporter/issues/48)).
+- **Progreso con las carpetas revisadas:** el contador de la GUI y de la CLI muestra, además de los archivos encontrados, las carpetas revisadas. Con un filtro de extensiones el escaneo ya no parece colgado mientras no aparecen coincidencias. En la GUI el contador también se ve en la barra de estado ([#49](https://github.com/dbarretol/file-reporter/issues/49)).
+
 ## [0.4.1] - 2026-11-12
 
 ### Cambiado
@@ -67,6 +75,7 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
+[Sin publicar]: https://github.com/dbarretol/file-reporter/compare/v0.4.1...HEAD
 [0.4.1]: https://github.com/dbarretol/file-reporter/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/dbarretol/file-reporter/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dbarretol/file-reporter/compare/v0.2.0...v0.3.0
