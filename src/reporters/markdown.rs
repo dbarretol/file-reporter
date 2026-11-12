@@ -1,5 +1,5 @@
 use crate::models::{ExtStat, Node};
-use crate::runner::{format_percent, format_size};
+use crate::summary::{format_percent, format_size};
 use anyhow::{Context, Result};
 use std::io::Write;
 use std::path::Path;
