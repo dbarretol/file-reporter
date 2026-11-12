@@ -2,7 +2,7 @@ use crate::models::ExtStat;
 use crate::reporters;
 use crate::scanner::{self, ScanLog, ScanOptions, SkippedItem};
 use anyhow::{bail, Context, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -21,13 +21,19 @@ impl ReportFormat {
     /// Todos los formatos, en el orden en que se escriben y se muestran.
     pub const ALL: [ReportFormat; 3] = [ReportFormat::Csv, ReportFormat::Md, ReportFormat::Json];
 
-    /// Nombre fijo del archivo de este formato en la carpeta de salida.
-    pub fn file_name(self) -> &'static str {
+    /// Extensión del archivo de este formato, sin punto.
+    pub fn extension(self) -> &'static str {
         match self {
-            ReportFormat::Csv => "report.csv",
-            ReportFormat::Md => "report.md",
-            ReportFormat::Json => "report.json",
+            ReportFormat::Csv => "csv",
+            ReportFormat::Md => "md",
+            ReportFormat::Json => "json",
         }
+    }
+
+    /// Nombre del archivo de este formato para el nombre base `base`
+    /// (`report` → `report.csv`).
+    pub fn file_name(self, base: &str) -> String {
+        format!("{base}.{}", self.extension())
     }
 
     /// Nombre para mostrar al usuario.
@@ -52,6 +58,113 @@ pub struct RunConfig {
     pub exclude_dirs: Vec<String>,
     /// Reportes a generar (al menos uno), sin repetidos.
     pub formats: Vec<ReportFormat>,
+    /// Nombre base de los reportes, sin extensión (`report` → `report.csv`,
+    /// `report.md`, `report.json`). Ver `validate_report_name`.
+    pub report_name: String,
+}
+
+/// Nombre base de los reportes si no se elige otro.
+pub const DEFAULT_REPORT_NAME: &str = "report";
+
+/// Caracteres que no pueden ir en un nombre de archivo (en Windows; en
+/// Linux y macOS solo `/`, pero así un mismo nombre vale en todos).
+const INVALID_NAME_CHARS: [char; 9] = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
+
+/// Comprueba que `name` sirva como nombre base de los reportes: no vacío,
+/// sin separadores de carpeta ni caracteres no válidos en Windows, y sin
+/// punto o espacio al final (Windows los quita en silencio).
+pub fn validate_report_name(name: &str) -> Result<()> {
+    if name.trim().is_empty() {
+        bail!("El nombre de los reportes no puede estar vacío");
+    }
+    if let Some(c) = name
+        .chars()
+        .find(|c| INVALID_NAME_CHARS.contains(c) || c.is_control())
+    {
+        bail!("El nombre de los reportes no puede contener «{c}»: {name}");
+    }
+    if name.ends_with(['.', ' ']) {
+        bail!("El nombre de los reportes no puede terminar en punto ni en espacio: {name}");
+    }
+    Ok(())
+}
+
+/// Nombre alternativo para no pisar reportes existentes:
+/// `report-<carpeta>-<AAAA-MM-DD>` y, si alguno de los `formats` ya existe
+/// en `output` con ese nombre, `-2`, `-3`… La carpeta es el último
+/// componente de `input` (la letra de unidad para `C:\\`), con los
+/// caracteres no válidos cambiados por `_`.
+pub fn auto_report_name(
+    input: &Path,
+    output: &Path,
+    formats: &[ReportFormat],
+    date: chrono::NaiveDate,
+) -> String {
+    let folder: String = input
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| input.display().to_string())
+        .chars()
+        .map(|c| {
+            if INVALID_NAME_CHARS.contains(&c) || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let folder = folder.trim_matches(['_', '.', ' ']);
+    let folder = if folder.is_empty() { "carpeta" } else { folder };
+    let base = format!("{DEFAULT_REPORT_NAME}-{folder}-{}", date.format("%Y-%m-%d"));
+    let taken = |name: &str| {
+        formats
+            .iter()
+            .any(|f| output.join(f.file_name(name)).exists())
+    };
+    if !taken(&base) {
+        return base;
+    }
+    (2..)
+        .map(|n| format!("{base}-{n}"))
+        .find(|name| !taken(name))
+        .expect("siempre hay un número libre")
+}
+
+/// `true` si `file_name` es un reporte con nombre automático (ver
+/// `auto_report_name`) o su temporal: `report-<carpeta>-AAAA-MM-DD[-N]`
+/// con extensión `.csv`, `.md` o `.json` (y quizá `.tmp`). Sirve para no
+/// incluir en un reporte los de corridas anteriores guardadas con otro
+/// nombre.
+pub fn is_auto_report_name(file_name: &str) -> bool {
+    let name = file_name.strip_suffix(".tmp").unwrap_or(file_name);
+    let Some(stem) = ReportFormat::ALL
+        .iter()
+        .find_map(|f| name.strip_suffix(&format!(".{}", f.extension())))
+    else {
+        return false;
+    };
+    let Some(rest) = stem.strip_prefix(&format!("{DEFAULT_REPORT_NAME}-")) else {
+        return false;
+    };
+    // `<carpeta>-AAAA-MM-DD`, con la carpeta no vacía.
+    let ends_with_date = |s: &str| {
+        s.len() > 11 && {
+            let (folder, date) = s.split_at(s.len() - 11);
+            !folder.is_empty()
+                && date.starts_with('-')
+                && chrono::NaiveDate::parse_from_str(&date[1..], "%Y-%m-%d").is_ok()
+        }
+    };
+    if ends_with_date(rest) {
+        return true;
+    }
+    // Con sufijo `-N`.
+    match rest.rsplit_once('-') {
+        Some((head, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => {
+            ends_with_date(head)
+        }
+        _ => false,
+    }
 }
 
 impl RunConfig {
@@ -62,7 +175,7 @@ impl RunConfig {
         ReportFormat::ALL
             .into_iter()
             .filter(|f| self.formats.contains(f))
-            .map(|f| (f, self.output.join(f.file_name())))
+            .map(|f| (f, self.output.join(f.file_name(&self.report_name))))
             .collect()
     }
 }
@@ -179,21 +292,34 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
         bail!("La ruta no es un directorio: {}", cfg.input.display());
     }
 
+    validate_report_name(&cfg.report_name)?;
+
     let reports = cfg.report_paths();
 
     // Excluir del escaneo los reportes de una corrida anterior (siempre, de
-    // los tres formatos: también los que esta corrida no genera), sus
-    // temporales (`report.csv.tmp`…, que quedarían si un corte de luz
-    // interrumpe la escritura; ver `reporters::write_atomic`) y, si la
-    // salida es una carpeta distinta de la entrada, la carpeta de salida
-    // completa (por si contiene sobras de corridas previas). Cuando
+    // los tres formatos: también los que esta corrida no genera), con el
+    // nombre por defecto y con el de esta corrida, sus temporales
+    // (`report.csv.tmp`…, que quedarían si un corte de luz interrumpe la
+    // escritura; ver `reporters::write_atomic`), los guardados con nombre
+    // automático (`report-docs-2026-11-12.csv`…, ver `is_auto_report_name`)
+    // y, si la salida es una carpeta distinta de la entrada, la carpeta de
+    // salida completa (por si contiene sobras de corridas previas). Cuando
     // output == input no se puede excluir la carpeta entera, solo los
     // archivos exactos.
-    let mut excluded: Vec<PathBuf> = ReportFormat::ALL
-        .iter()
-        .map(|f| cfg.output.join(f.file_name()))
+    let mut excluded: Vec<PathBuf> = [DEFAULT_REPORT_NAME, cfg.report_name.as_str()]
+        .into_iter()
+        .flat_map(|base| ReportFormat::ALL.map(|f| cfg.output.join(f.file_name(base))))
         .flat_map(|p| [reporters::temp_path(&p), p])
         .collect();
+    // Una sola lectura de la carpeta de salida (si ya existe), no del árbol.
+    if let Ok(entries) = std::fs::read_dir(&cfg.output) {
+        excluded.extend(
+            entries
+                .flatten()
+                .filter(|e| is_auto_report_name(&e.file_name().to_string_lossy()))
+                .map(|e| e.path()),
+        );
+    }
     if cfg.output != cfg.input {
         excluded.push(cfg.output.clone());
     }
@@ -353,6 +479,7 @@ mod tests {
             dirs_only: false,
             exclude_dirs: vec![],
             formats: vec![ReportFormat::Json],
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let progress = Progress::new();
         run(&cfg, Some(progress.clone())).unwrap();
@@ -371,6 +498,7 @@ mod tests {
             dirs_only: false,
             exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let err = run(&cfg, None).unwrap_err();
         assert!(err.to_string().contains("no existe"));
@@ -388,6 +516,7 @@ mod tests {
             dirs_only: false,
             exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let err = run(&cfg, None).unwrap_err();
         assert!(err.to_string().contains("no es un directorio"));
@@ -409,6 +538,7 @@ mod tests {
             dirs_only: false,
             exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let summary = run(&cfg, None).unwrap();
 
@@ -446,6 +576,7 @@ mod tests {
             dirs_only: false,
             exclude_dirs: vec!["target".to_string()],
             formats: vec![ReportFormat::Md],
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let summary = run(&cfg, None).unwrap();
         assert_eq!(summary.files_count, 1);
@@ -478,12 +609,136 @@ mod tests {
             dirs_only: false,
             exclude_dirs: vec![],
             formats: vec![ReportFormat::Csv],
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let summary = run(&cfg, None).unwrap();
         assert_eq!(summary.files_count, 1);
         assert!(!input.join("report.csv.tmp").exists());
         let csv = fs::read_to_string(input.join("report.csv")).unwrap();
         assert!(!csv.contains("report.csv"));
+    }
+
+    #[test]
+    fn report_name_changes_the_file_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        fs::create_dir(&input).unwrap();
+        fs::write(input.join("a.txt"), "x").unwrap();
+        // Reportes de corridas anteriores en la misma carpeta: con el
+        // nombre por defecto y con nombre automático. No deben aparecer.
+        fs::write(input.join("report.csv"), "viejo").unwrap();
+        fs::write(input.join("report-in-2026-11-12.json"), "viejo").unwrap();
+
+        let cfg = RunConfig {
+            input: input.clone(),
+            output: input.clone(),
+            extensions: vec![],
+            dirs_only: false,
+            exclude_dirs: vec![],
+            formats: vec![ReportFormat::Csv, ReportFormat::Md],
+            report_name: "facturas".to_string(),
+        };
+        let summary = run(&cfg, None).unwrap();
+        assert_eq!(summary.files_count, 1);
+        assert_eq!(summary.reports[0].1, input.join("facturas.csv"));
+        assert!(input.join("facturas.md").is_file());
+        // El reporte anterior con el nombre por defecto no se toca.
+        assert_eq!(
+            fs::read_to_string(input.join("report.csv")).unwrap(),
+            "viejo"
+        );
+    }
+
+    #[test]
+    fn run_rejects_invalid_report_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = RunConfig {
+            input: dir.path().to_path_buf(),
+            output: dir.path().join("out"),
+            extensions: vec![],
+            dirs_only: false,
+            exclude_dirs: vec![],
+            formats: vec![ReportFormat::Csv],
+            report_name: "sub/facturas".to_string(),
+        };
+        let err = run(&cfg, None).unwrap_err();
+        assert!(err.to_string().contains("no puede contener «/»"), "{err}");
+        assert!(!dir.path().join("out").exists());
+    }
+
+    #[test]
+    fn validate_report_name_accepts_normal_names_only() {
+        for ok in ["report", "facturas 2026", "inventario.v2", "año-ñandú"] {
+            assert!(validate_report_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "", "  ", "a/b", r"a\b", "a:b", "a*", "a?", "a\"b", "<a>", "a|b", "a.", "a ",
+        ] {
+            assert!(validate_report_name(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn auto_report_name_uses_folder_and_date_and_skips_taken_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path();
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        let input = Path::new("D:/datos/Mis docs");
+        let formats = [ReportFormat::Csv, ReportFormat::Json];
+
+        assert_eq!(
+            auto_report_name(input, out, &formats, date),
+            "report-Mis docs-2026-11-12"
+        );
+        // Basta con que exista uno de los formatos pedidos para pasar al
+        // siguiente número.
+        fs::write(out.join("report-Mis docs-2026-11-12.json"), "").unwrap();
+        assert_eq!(
+            auto_report_name(input, out, &formats, date),
+            "report-Mis docs-2026-11-12-2"
+        );
+        fs::write(out.join("report-Mis docs-2026-11-12-2.csv"), "").unwrap();
+        assert_eq!(
+            auto_report_name(input, out, &formats, date),
+            "report-Mis docs-2026-11-12-3"
+        );
+        // Un formato no pedido no ocupa el nombre.
+        assert_eq!(
+            auto_report_name(input, out, &[ReportFormat::Md], date),
+            "report-Mis docs-2026-11-12"
+        );
+    }
+
+    #[test]
+    fn auto_report_name_handles_drive_roots() {
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 2).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let name = auto_report_name(Path::new(r"C:\"), dir.path(), &ReportFormat::ALL, date);
+        assert!(validate_report_name(&name).is_ok(), "{name}");
+        assert!(name.ends_with("-2026-01-02"), "{name}");
+    }
+
+    #[test]
+    fn is_auto_report_name_matches_only_generated_names() {
+        for yes in [
+            "report-docs-2026-11-12.csv",
+            "report-docs-2026-11-12-2.md",
+            "report-mis-docs-2026-11-12.json",
+            "report-docs-2026-11-12.csv.tmp",
+        ] {
+            assert!(is_auto_report_name(yes), "{yes}");
+        }
+        for no in [
+            "report.csv",
+            "report-final.csv",
+            "report-2026-11-12.csv",
+            "report-docs-2026-11-12.txt",
+            "report-docs-2026-13-40.csv",
+            "reporte-docs-2026-11-12.csv",
+            "report-docs-2026-11-12-.csv",
+        ] {
+            assert!(!is_auto_report_name(no), "{no}");
+        }
     }
 
     #[test]
@@ -502,6 +757,7 @@ mod tests {
             exclude_dirs: vec![],
             // Desordenado y con repetidos: se normaliza al orden de ALL.
             formats: vec![ReportFormat::Json, ReportFormat::Csv, ReportFormat::Json],
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let summary = run(&cfg, None).unwrap();
 
@@ -522,6 +778,7 @@ mod tests {
             dirs_only: false,
             exclude_dirs: vec![],
             formats: vec![],
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let err = run(&cfg, None).unwrap_err();
         assert!(err.to_string().contains("formato"));
@@ -545,6 +802,7 @@ mod tests {
             dirs_only: true,
             exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let summary = run(&cfg, None).unwrap();
 
@@ -572,6 +830,7 @@ mod tests {
             dirs_only: false,
             exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let progress = Progress::new();
         run(&cfg, Some(progress.clone())).unwrap();
@@ -601,6 +860,7 @@ mod tests {
             dirs_only: false,
             exclude_dirs: vec![],
             formats: ReportFormat::ALL.to_vec(),
+            report_name: DEFAULT_REPORT_NAME.to_string(),
         };
         let progress = Progress::new();
         let result = run(&cfg, Some(progress.clone()));
