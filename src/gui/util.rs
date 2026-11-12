@@ -99,9 +99,58 @@ pub(super) fn open_selecting(path: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Carpetas recientes que se recuerdan.
+pub(super) const MAX_RECENT: usize = 5;
+
+/// Pone `path` al principio de la lista de recientes, sin repetirla (una
+/// misma carpeta escrita con otra barra final o, en Windows y macOS, con
+/// otras mayúsculas cuenta como la misma) y sin pasar de `MAX_RECENT`.
+pub(super) fn push_recent(list: &mut Vec<String>, path: &str) {
+    let path = path.trim_end_matches(['/', '\\']);
+    if path.is_empty() {
+        return;
+    }
+    let key = recent_key(path);
+    list.retain(|p| recent_key(p) != key);
+    list.insert(0, path.to_string());
+    list.truncate(MAX_RECENT);
+}
+
+fn recent_key(path: &str) -> String {
+    let path = path.trim_end_matches(['/', '\\']);
+    if cfg!(any(windows, target_os = "macos")) {
+        path.to_lowercase()
+    } else {
+        path.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn push_recent_moves_repeats_to_the_front_and_keeps_five() {
+        let mut list = Vec::new();
+        for p in ["a", "b", "c", "d", "e", "f"] {
+            push_recent(&mut list, p);
+        }
+        assert_eq!(list, vec!["f", "e", "d", "c", "b"]);
+
+        push_recent(&mut list, "c/");
+        assert_eq!(list, vec!["c", "f", "e", "d", "b"]);
+
+        push_recent(&mut list, "");
+        assert_eq!(list.len(), MAX_RECENT);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn push_recent_ignores_case_on_windows() {
+        let mut list = vec![r"C:\Datos".to_string()];
+        push_recent(&mut list, r"c:\datos\");
+        assert_eq!(list, vec![r"c:\datos"]);
+    }
 
     #[test]
     fn select_arg_quotes_paths_with_commas_and_spaces() {

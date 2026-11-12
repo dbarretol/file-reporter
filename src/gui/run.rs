@@ -1,6 +1,6 @@
 //! Estado de la corrida y comunicación con el hilo que escanea.
 
-use super::util::clean_path_input;
+use super::util::{clean_path_input, push_recent};
 use super::App;
 use crate::runner::{self, Progress, RunConfig, RunSummary};
 use eframe::egui;
@@ -139,6 +139,7 @@ impl App {
     pub(super) fn start_run(&mut self, cfg: RunConfig) {
         self.copied = None;
         self.clear_ui_error();
+        push_recent(&mut self.recent_inputs, &cfg.input.display().to_string());
 
         let progress = Progress::new();
         let (tx, rx) = mpsc::channel::<WorkerMsg>();
