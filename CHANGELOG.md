@@ -4,6 +4,10 @@ Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https
 
 ## [Sin publicar]
 
+### Cambiado
+
+- **CLI:** el tiempo total se muestra como en la GUI (`<1 s`, `42s`, `3m 05s`) en vez de con el formato interno de Rust (`5.26ms`, `183.4s`) ([#78](https://github.com/dbarretol/file-reporter/issues/78)).
+
 ### Añadido
 
 - **Sumas SHA256 en cada Release** (`SHA256SUMS.txt`), para comprobar que el ejecutable descargado está íntegro. El README explica cómo hacerlo en Windows y Linux ([#77](https://github.com/dbarretol/file-reporter/issues/77)).
