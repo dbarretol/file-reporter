@@ -152,6 +152,9 @@ struct App {
     /// lista") y cuándo, para confirmar la copia en el botón durante
     /// `COPIED_TTL`.
     copied: Option<(Copied, Instant)>,
+
+    /// Si "Opciones" ya se forzó plegado al arrancar (ver `render_options`).
+    options_initialized: bool,
 }
 
 /// Qué se copió desde el modal de resultado.

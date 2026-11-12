@@ -162,11 +162,18 @@ impl App {
         // En modo solo carpetas las extensiones no tienen efecto.
         let ext_enabled = enabled && !self.dirs_only;
         let summary = self.options_summary();
-        let header = egui::CollapsingHeader::new(
+        let mut header = egui::CollapsingHeader::new(
             egui::RichText::new(format!("Opciones  ·  {summary}")).size(13.0),
         )
         .id_salt("options")
         .default_open(false);
+        // Siempre plegado al abrir la app: egui recuerda entre sesiones si
+        // se dejó abierto, y se fuerza cerrado en el primer frame. Después,
+        // abrirlo o cerrarlo funciona con normalidad.
+        if !self.options_initialized {
+            header = header.open(Some(false));
+            self.options_initialized = true;
+        }
         header.show(ui, |ui| {
             ui.add_space(4.0);
             // Extensiones
@@ -474,6 +481,45 @@ fn toggle_preset(field: &str, preset: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn app_with(extensions: &str, exclude: &str, dirs_only: bool, formats: [bool; 3]) -> App {
+        App {
+            extensions: extensions.to_string(),
+            exclude_dirs: exclude.to_string(),
+            dirs_only,
+            formats,
+            ..App::default()
+        }
+    }
+
+    #[test]
+    fn options_summary_describes_the_choices() {
+        let app = app_with("", &default_exclude_dirs(), false, ALL_FORMATS);
+        assert_eq!(
+            app.options_summary(),
+            "Todas las extensiones  ·  omite 7 carpetas  ·  CSV + MD + JSON"
+        );
+        let app = app_with(".PDF, docx", "build", false, [true, false, false]);
+        assert_eq!(
+            app.options_summary(),
+            "pdf, docx  ·  omite 1 carpeta  ·  CSV"
+        );
+        // Solo carpetas: las extensiones no cuentan.
+        let app = app_with("pdf", "", true, [false, false, false]);
+        assert_eq!(
+            app.options_summary(),
+            "Solo carpetas  ·  sin carpetas omitidas  ·  ningún formato"
+        );
+    }
+
+    #[test]
+    fn path_tail_keeps_the_last_two_components() {
+        let sep = std::path::MAIN_SEPARATOR;
+        let long = ["", "datos", "proyectos", "review", "in"].join(&sep.to_string());
+        assert_eq!(path_tail(&long), format!("…{sep}review{sep}in"));
+        // Rutas cortas, tal cual.
+        assert_eq!(path_tail("docs"), "docs");
+    }
 
     #[test]
     fn toggle_preset_adds_missing_and_keeps_user_text() {
