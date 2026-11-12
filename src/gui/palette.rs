@@ -1,6 +1,8 @@
-//! Colores de la interfaz, con una variante para cada tema.
+//! Colores de la interfaz, con una variante para cada tema, y la elección
+//! de tema del usuario.
 
 use eframe::egui::{self, Color32};
+use serde::{Deserialize, Serialize};
 
 /// Colores semánticos de la interfaz para el tema activo.
 #[derive(Clone, Copy)]
@@ -37,13 +39,52 @@ impl Palette {
         error_fill: Color32::from_rgba_unmultiplied_const(220, 70, 70, 20),
     };
 
-    /// Paleta del tema activo (egui sigue el tema del sistema). Toma un
+    /// Paleta del tema activo (el elegido o, por defecto, el del sistema). Toma un
     /// `Ui` porque cada sitio de uso ya tiene uno a mano.
     pub fn of(ui: &egui::Ui) -> Self {
         if ui.visuals().dark_mode {
             Self::DARK
         } else {
             Self::LIGHT
+        }
+    }
+}
+
+/// Tema elegido en la cabecera. Tipo propio (y no `egui::ThemePreference`)
+/// para que el estado guardado no dependa de cómo egui serialice el suyo.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) enum ThemeChoice {
+    /// Seguir el tema claro/oscuro del sistema operativo.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeChoice {
+    pub const ALL: [Self; 3] = [Self::System, Self::Light, Self::Dark];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::System => "Sistema",
+            Self::Light => "Claro",
+            Self::Dark => "Oscuro",
+        }
+    }
+
+    pub fn hint(self) -> &'static str {
+        match self {
+            Self::System => "Usar el tema claro u oscuro del sistema operativo",
+            Self::Light => "Usar siempre el tema claro",
+            Self::Dark => "Usar siempre el tema oscuro",
+        }
+    }
+
+    pub fn to_egui(self) -> egui::ThemePreference {
+        match self {
+            Self::System => egui::ThemePreference::System,
+            Self::Light => egui::ThemePreference::Light,
+            Self::Dark => egui::ThemePreference::Dark,
         }
     }
 }

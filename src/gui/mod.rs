@@ -19,7 +19,7 @@ use crate::runner::ReportFormat;
 use anyhow::Result;
 use eframe::egui;
 use form::PathCheck;
-use palette::Palette;
+use palette::{Palette, ThemeChoice};
 use run::{PendingRun, RunState};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -93,6 +93,8 @@ struct App {
     dirs_only: bool,
     /// Casillas CSV / Markdown / JSON, en el orden de `ReportFormat::ALL`.
     formats: [bool; 3],
+    /// Tema elegido en la cabecera (por defecto, el del sistema).
+    theme: ThemeChoice,
 
     /// Validación en vivo de las rutas tecleadas (ver `PathCheck`).
     input_check: PathCheck,
@@ -139,6 +141,9 @@ struct PersistedState {
     /// (también al cargar un estado de una versión que no lo guardaba), los
     /// tres.
     formats: [bool; 3],
+    /// Tema elegido; los estados guardados antes de existir el selector
+    /// siguen el del sistema.
+    theme: ThemeChoice,
 }
 
 impl Default for PersistedState {
@@ -150,6 +155,7 @@ impl Default for PersistedState {
             exclude_dirs: default_exclude_dirs(),
             dirs_only: false,
             formats: ALL_FORMATS,
+            theme: ThemeChoice::System,
         }
     }
 }
@@ -160,6 +166,7 @@ impl App {
             .storage
             .and_then(|s| eframe::get_value::<PersistedState>(s, PERSIST_KEY))
             .unwrap_or_default();
+        cc.egui_ctx.set_theme(state.theme.to_egui());
         App {
             input_path: state.input_path,
             output_path: state.output_path,
@@ -167,6 +174,7 @@ impl App {
             exclude_dirs: state.exclude_dirs,
             dirs_only: state.dirs_only,
             formats: state.formats,
+            theme: state.theme,
             ..App::default()
         }
     }
@@ -231,8 +239,8 @@ impl App {
         }
     }
 
-    /// Barra superior con el título.
-    fn render_header(&self, ui: &mut egui::Ui) {
+    /// Barra superior con el título y el selector de tema.
+    fn render_header(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("header")
             .exact_size(56.0)
             .show(ui, |ui| {
@@ -253,8 +261,42 @@ impl App {
                             .size(12.0),
                         );
                     });
+                    // Selector de tema a la derecha: tres botones, el
+                    // elegido resaltado.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(16.0);
+                        self.render_theme_selector(ui);
+                    });
                 });
             });
+    }
+
+    /// Botones Sistema / Claro / Oscuro. El cambio se aplica al instante y
+    /// se guarda con el resto del estado.
+    fn render_theme_selector(&mut self, ui: &mut egui::Ui) {
+        let mut picked = None;
+        // De derecha a izquierda: se recorren al revés para que se lean
+        // "Sistema · Claro · Oscuro".
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for choice in ThemeChoice::ALL.into_iter().rev() {
+            let label = egui::RichText::new(choice.label()).size(12.0);
+            if ui
+                .selectable_label(self.theme == choice, label)
+                .on_hover_text(choice.hint())
+                .clicked()
+            {
+                picked = Some(choice);
+            }
+        }
+        ui.label(
+            egui::RichText::new("Tema:")
+                .color(Palette::of(ui).muted)
+                .size(12.0),
+        );
+        if let Some(choice) = picked.filter(|c| *c != self.theme) {
+            self.theme = choice;
+            ui.ctx().set_theme(choice.to_egui());
+        }
     }
 
     /// Barra de estado inferior.
@@ -375,6 +417,7 @@ impl eframe::App for App {
             exclude_dirs: self.exclude_dirs.clone(),
             dirs_only: self.dirs_only,
             formats: self.formats,
+            theme: self.theme,
         };
         eframe::set_value(storage, PERSIST_KEY, &state);
     }
@@ -394,6 +437,17 @@ mod tests {
         let state: PersistedState = serde_json::from_str(old).unwrap();
         assert_eq!(state.formats, ALL_FORMATS);
         assert_eq!(state.exclude_dirs, default_exclude_dirs());
+        assert_eq!(state.theme, ThemeChoice::System);
         assert_eq!(state.input_path, "C:\\x");
+    }
+    #[test]
+    fn persisted_theme_round_trips() {
+        let state = PersistedState {
+            theme: ThemeChoice::Dark,
+            ..PersistedState::default()
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let back: PersistedState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.theme, ThemeChoice::Dark);
     }
 }
