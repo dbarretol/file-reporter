@@ -72,7 +72,7 @@ file-reporter /ruta/a/escanear
 
 **Interfaz gráfica**
 - 🖱️ Arrastra una carpeta, usa "Examinar…" o elige una de las 5 últimas (🕘).
-- 🧭 Formulario simple: lo esencial arriba y el resto en **Opciones**, con un resumen de lo elegido.
+- 🧭 Formulario simple: arriba solo la carpeta a escanear; el resto, incluida la carpeta de salida, en **Opciones**, con un resumen de lo elegido. Si falta algo para empezar, lo dice junto al botón.
 - 📈 Progreso en vivo (archivos encontrados y carpetas revisadas); **cancela** en cualquier momento con Esc.
 - 🧾 Resultado claro: reportes (abrir o copiar su ruta), tipos de archivo y lo que quedó fuera, con su motivo.
 - 🔄 Al volver a generar, ofrece actualizar los reportes anteriores o guardar los nuevos con otro nombre, o no volver a preguntar.
@@ -153,7 +153,7 @@ El mismo ejecutable funciona en dos modos:
 
 ```mermaid
 flowchart TD
-    A["📁 Elegir la carpeta a escanear<br/>escribir, Examinar…, 🕘 recientes o arrastrar"] --> B["⚙️ Opciones (opcional)<br/>extensiones · carpetas a omitir · formatos"]
+    A["📁 Elegir la carpeta a escanear<br/>escribir, Examinar…, 🕘 recientes o arrastrar"] --> B["⚙️ Opciones (opcional)<br/>salida · extensiones · carpetas a omitir · formatos"]
     B --> C["▶ Generar reportes"]
     C --> D{"¿Ya hay reportes<br/>en la carpeta de salida?"}
     D -- "No" --> E["⏳ Escaneo con progreso en vivo<br/>Esc cancela"]
@@ -163,19 +163,19 @@ flowchart TD
     E --> G["✅ Resultado: reportes, tipos de archivo<br/>y lo que quedó fuera"]
 ```
 
-1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…", elige una reciente con 🕘 o arrástrala a la ventana. Debajo se ve el final de la ruta, por si el campo la corta.
-2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
-3. *(Opcional)* Despliega **Opciones**. Plegado, muestra un resumen de lo elegido (p. ej. "Todas las extensiones · omite 7 carpetas · CSV + MD + JSON"). Dentro puedes:
+1. Elige la **carpeta a escanear**: arrástrala a la zona punteada (o a cualquier parte de la ventana), haz clic en esa zona o en "Examinar…", elige una reciente con 🕘 o escribe la ruta. Debajo se ve el final de la ruta, por si el campo la corta, y dónde se guardarán los reportes.
+2. *(Opcional)* Despliega **Opciones**. Plegado, muestra un resumen de lo elegido (p. ej. "Todas las extensiones · omite 7 carpetas · CSV + MD + JSON · salida: misma carpeta"). Dentro puedes:
+   - elegir otra **carpeta de salida** (por defecto, la misma carpeta escaneada; si no existe, se crea);
    - escribir las **extensiones** a incluir (las sugerencias se suman a lo escrito; pulsarlas otra vez las quita);
    - revisar las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas;
    - marcar **Solo carpetas** para obtener solo la jerarquía de directorios;
    - desmarcar los **formatos** que no necesites;
    - volver a activar **Preguntar antes de reemplazar reportes anteriores**, si elegiste "No volver a preguntar".
-4. Pulsa **▶ Generar reportes** (o Enter, si no estás escribiendo en un campo). Si en la carpeta de salida ya hay reportes de una ejecución anterior, puedes **actualizarlos** (se reemplazan) o **guardar los nuevos con otro nombre** (`report-<carpeta>-<fecha>.*`).
-5. Al terminar se abre la ventana de resultado, con la carpeta donde se guardaron los reportes, un botón para abrir cada uno y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
+3. Pulsa **▶ Generar reportes** (o Enter, si no estás escribiendo en un campo). Si en la carpeta de salida ya hay reportes de una ejecución anterior, puedes **actualizarlos** (se reemplazan) o **guardar los nuevos con otro nombre** (`report-<carpeta>-<fecha>.*`).
+4. Al terminar se abre la ventana de resultado, con la carpeta donde se guardaron los reportes, un botón para abrir cada uno y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir. **↺ Restablecer** vacía el formulario y vuelve las opciones a sus valores por defecto, sin perder el último resultado.
 
 <p align="center">
-  <img src="docs/images/gui-opciones.png" alt="Formulario de File Reporter con la carpeta a escanear, la carpeta de salida y Opciones desplegado: extensiones, carpetas a omitir, solo carpetas y formatos" width="760">
+  <img src="docs/images/gui-opciones.png" alt="Formulario de File Reporter con la carpeta a escanear y Opciones desplegado: carpeta de salida, extensiones, carpetas a omitir, solo carpetas, formatos y preguntar antes de reemplazar" width="760">
 </p>
 
 ### ⌨️ Línea de comandos
