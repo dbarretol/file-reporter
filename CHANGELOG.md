@@ -2,11 +2,7 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
-## [Sin publicar]
-
-### Cambiado
-
-- **Errores de la CLI en una línea:** `❌ <error>: <causa>`, en vez del formato de depuración (`Error: …` y `Caused by:`). El código de salida sigue siendo 1. Las extensiones y carpetas omitidas del encabezado se muestran como lista (`pdf, docx`) en lugar de `["pdf", "docx"]` ([#55](https://github.com/dbarretol/file-reporter/issues/55)).
+## [0.5.0] - 2026-11-12
 
 ### Añadido
 
@@ -14,6 +10,10 @@ Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https
 - **GUI: lista de elementos no accesibles:** el aviso "N elementos no accesibles fueron omitidos" se despliega para ver cuáles (hasta 200) y el motivo de cada uno, con un botón "Copiar lista" ([#48](https://github.com/dbarretol/file-reporter/issues/48)).
 - **Progreso con las carpetas revisadas:** el contador de la GUI y de la CLI muestra, además de los archivos encontrados, las carpetas revisadas. Con un filtro de extensiones el escaneo ya no parece colgado mientras no aparecen coincidencias. En la GUI el contador también se ve en la barra de estado ([#49](https://github.com/dbarretol/file-reporter/issues/49)).
 - **GUI: carpetas recientes:** un botón 🕘 junto a "Carpeta a escanear" ofrece las últimas 5 carpetas escaneadas, que se recuerdan entre sesiones. Las que ya no existen no se muestran ([#52](https://github.com/dbarretol/file-reporter/issues/52)).
+
+### Cambiado
+
+- **Errores de la CLI en una línea:** `❌ <error>: <causa>`, en vez del formato de depuración (`Error: …` y `Caused by:`). El código de salida sigue siendo 1. Las extensiones y carpetas omitidas del encabezado se muestran como lista (`pdf, docx`) en lugar de `["pdf", "docx"]` ([#55](https://github.com/dbarretol/file-reporter/issues/55)).
 
 ### Corregido
 
@@ -85,7 +85,7 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
-[Sin publicar]: https://github.com/dbarretol/file-reporter/compare/v0.4.1...HEAD
+[0.5.0]: https://github.com/dbarretol/file-reporter/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/dbarretol/file-reporter/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/dbarretol/file-reporter/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dbarretol/file-reporter/compare/v0.2.0...v0.3.0
