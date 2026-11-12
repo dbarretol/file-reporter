@@ -44,13 +44,15 @@ pub fn write_csv(root: &Node, output: &Path) -> Result<()> {
         .from_writer(buf_writer);
 
     // 4. Serializar todos los registros (incluye el header automáticamente).
-    //    `name`/`directory`/`full_path` provienen de nombres de archivo en
-    //    disco, fuera del control del usuario (descargas, carpetas
+    //    `name`/`extension`/`directory`/`full_path` provienen de nombres de
+    //    archivo en disco, fuera del control del usuario (descargas, carpetas
     //    compartidas): se sanean antes de escribir para evitar CSV
-    //    injection. `extension`/fechas/tamaños no son texto libre.
+    //    injection. La extensión también sale del nombre (p. ej. `x.=1+1`
+    //    tiene extensión `=1+1`). Fechas/tamaños no son texto libre.
     scanner::try_for_each_record(root, &mut |r| {
         let sanitized = FileRecord {
             name: sanitize_for_spreadsheet(&r.name).into_owned(),
+            extension: sanitize_for_spreadsheet(&r.extension).into_owned(),
             directory: sanitize_for_spreadsheet(&r.directory).into_owned(),
             full_path: sanitize_for_spreadsheet(&r.full_path).into_owned(),
             ..r
@@ -88,7 +90,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("in");
         std::fs::create_dir(&input).unwrap();
-        for name in ["=1+1.txt", "-informe.txt", "@evil.txt"] {
+        for name in ["=1+1.txt", "-informe.txt", "@evil.txt", "x.=1+1"] {
             std::fs::write(input.join(name), "x").unwrap();
         }
         let tree = scanner::build_tree(&input, &scanner::ScanOptions::default()).unwrap();
@@ -98,10 +100,13 @@ mod tests {
 
         let content = std::fs::read_to_string(&output).unwrap();
         assert!(content.starts_with('\u{feff}'), "falta el BOM UTF-8");
-        assert_eq!(content.lines().count(), 4, "cabecera + 3 filas");
+        assert_eq!(content.lines().count(), 5, "cabecera + 4 filas");
         // `name` es la primera columna: cada fila empieza por el nombre saneado.
         assert!(content.contains("\n'=1+1;"));
         assert!(content.contains("\n'-informe;"));
         assert!(content.contains("\n'@evil;"));
+        // La extensión también sale del nombre: en `x.=1+1` Excel evaluaría
+        // `=1+1` como fórmula en la segunda columna.
+        assert!(content.contains("\nx;'=1+1;"));
     }
 }
