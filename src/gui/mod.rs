@@ -116,6 +116,9 @@ struct App {
     dirs_only: bool,
     /// Casillas CSV / Markdown / JSON, en el orden de `ReportFormat::ALL`.
     formats: [bool; 3],
+    /// Últimas carpetas escaneadas, la más reciente primero (ver
+    /// `util::push_recent`).
+    recent_inputs: Vec<String>,
     /// Tema elegido en la cabecera (por defecto, el del sistema).
     theme: ThemeChoice,
     /// Reenvíos del tema a la barra de título ya hechos al arrancar y
@@ -181,6 +184,9 @@ struct PersistedState {
     /// Tema elegido; los estados guardados antes de existir el selector
     /// siguen el del sistema.
     theme: ThemeChoice,
+    /// Últimas carpetas escaneadas (vacío en estados de versiones
+    /// anteriores).
+    recent_inputs: Vec<String>,
 }
 
 impl Default for PersistedState {
@@ -193,6 +199,7 @@ impl Default for PersistedState {
             dirs_only: false,
             formats: ALL_FORMATS,
             theme: ThemeChoice::System,
+            recent_inputs: Vec::new(),
         }
     }
 }
@@ -212,6 +219,7 @@ impl App {
             dirs_only: state.dirs_only,
             formats: state.formats,
             theme: state.theme,
+            recent_inputs: state.recent_inputs,
             ..App::default()
         }
     }
@@ -496,6 +504,7 @@ impl eframe::App for App {
             dirs_only: self.dirs_only,
             formats: self.formats,
             theme: self.theme,
+            recent_inputs: self.recent_inputs.clone(),
         };
         eframe::set_value(storage, PERSIST_KEY, &state);
     }
@@ -517,6 +526,18 @@ mod tests {
         assert_eq!(state.exclude_dirs, default_exclude_dirs());
         assert_eq!(state.theme, ThemeChoice::System);
         assert_eq!(state.input_path, "C:\\x");
+        assert!(state.recent_inputs.is_empty());
+    }
+
+    #[test]
+    fn persisted_recent_inputs_round_trip() {
+        let state = PersistedState {
+            recent_inputs: vec!["C:\\a".to_string(), "D:\\b".to_string()],
+            ..PersistedState::default()
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let back: PersistedState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.recent_inputs, state.recent_inputs);
     }
     #[test]
     fn persisted_theme_round_trips() {

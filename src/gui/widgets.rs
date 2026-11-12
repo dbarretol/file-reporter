@@ -4,12 +4,15 @@ use super::util::truncate_path_display;
 use eframe::egui;
 use std::path::{Path, PathBuf};
 
-/// Fila de selección de carpeta: input + botón "Examinar…" alineados.
+/// Fila de selección de carpeta: input + botón "Examinar…" alineados y, si
+/// `recent` no está vacío, un menú 🕘 con esas carpetas para rellenar el
+/// campo con un clic.
 pub(super) fn folder_row(
     ui: &mut egui::Ui,
     value: &mut String,
     enabled: bool,
     hint: &str,
+    recent: &[String],
     pick: impl FnOnce() -> Option<PathBuf>,
 ) {
     // De derecha a izquierda: primero el botón, con su ancho real, y el campo
@@ -26,6 +29,9 @@ pub(super) fn folder_row(
                     *value = path.display().to_string();
                 }
             }
+            if !recent.is_empty() {
+                ui.add_enabled_ui(enabled, |ui| recent_menu(ui, value, recent));
+            }
             ui.add_enabled(
                 enabled,
                 egui::TextEdit::singleline(value)
@@ -34,6 +40,26 @@ pub(super) fn folder_row(
             );
         });
     });
+}
+
+/// Menú de carpetas recientes. Las que ya no existen no se ofrecen; se
+/// comprueba solo con el menú abierto, no en cada frame.
+fn recent_menu(ui: &mut egui::Ui, value: &mut String, recent: &[String]) {
+    ui.menu_button("🕘", |ui| {
+        let existing: Vec<&String> = recent.iter().filter(|p| Path::new(p).is_dir()).collect();
+        if existing.is_empty() {
+            ui.label("Las carpetas recientes ya no existen.");
+        }
+        for path in existing {
+            let button = egui::Button::new(truncate_path_display(path, 70)).truncate();
+            if ui.add(button).on_hover_text(path.as_str()).clicked() {
+                value.clone_from(path);
+                ui.close();
+            }
+        }
+    })
+    .response
+    .on_hover_text("Carpetas recientes");
 }
 
 /// Acción pedida desde una fila de resultado.

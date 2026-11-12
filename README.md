@@ -86,7 +86,7 @@ C:\Demo\Proyecto
 - 🧩 Todas las opciones de la GUI (filtros, exclusiones, formatos, solo carpetas), listas para scripts.
 
 **Interfaz gráfica**
-- 🖱️ Arrastra y suelta una carpeta sobre la ventana, o usa "Examinar…".
+- 🖱️ Arrastra y suelta una carpeta sobre la ventana, usa "Examinar…" o elige una de las 5 últimas con 🕘.
 - ✅ Valida las rutas mientras escribes e indica dónde se guardarán los reportes.
 - 📈 Contador en vivo de archivos encontrados y carpetas revisadas, y tiempo transcurrido; **cancela** en cualquier momento con el botón o con Esc.
 - 📊 Resultado en una ventana propia: archivos, tamaño total, tiempo y tipos de archivo; abre o copia la ruta de cada reporte.
