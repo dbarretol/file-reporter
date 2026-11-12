@@ -7,6 +7,7 @@ Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https
 ### Corregido
 
 - **Fechas en hora local:** `report.csv` calculaba `created` y `modified` en UTC, así que fuera de UTC un archivo podía salir con otra fecha que la del explorador de archivos (en UTC-5, todo lo modificado desde las 19:00 aparecía con la fecha del día siguiente). Ahora las fechas usan la hora local del equipo. Las columnas `created_iso`/`modified_iso` y las fechas de `report.json` pasan a llevar el desfase local (`2026-11-11T21:30:00-05:00`) en vez de UTC (`2026-11-12T02:30:00+00:00`): es el mismo instante, y cualquier lector de ISO-8601 lo interpreta igual ([#72](https://github.com/dbarretol/file-reporter/issues/72)).
+- **GUI: el menú de carpetas recientes ya no consulta el disco en cada cuadro.** Comprobaba si cada carpeta seguía existiendo una y otra vez mientras el menú estaba abierto, así que una carpeta de red que no responde podía congelar la ventana. Ahora se comprueban en segundo plano al arrancar y cuando cambia la lista ([#76](https://github.com/dbarretol/file-reporter/issues/76)).
 
 ### Seguridad
 
