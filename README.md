@@ -229,7 +229,7 @@ Así se ve una ejecución sobre un proyecto de ejemplo:
    .rs                      2 arch. ·    7.0 KB ·   0.3 %
    .md                      1 arch. ·    1.9 KB ·  <0.1 %
 🚫 2 carpetas omitidas por nombre (.git, build)
-⏱️  Tiempo: 5.26ms
+⏱️  Tiempo: <1 s
 ```
 
 | Opción | Descripción |
@@ -400,6 +400,7 @@ src/
 │   └── …            # widgets, paleta de colores, utilidades
 ├── icon.rs          # Icono de la app, dibujado por código (sin imágenes)
 ├── runner.rs        # Flujo común: validar → escanear → escribir reportes
+├── naming.rs        # Nombre de los reportes: validación y nombre automático
 ├── summary.rs       # Textos del resumen que comparten CLI y GUI (tamaños, tipos, avisos)
 ├── scanner.rs       # Recorrido paralelo de la carpeta
 ├── models.rs        # Node (árbol), FileRecord (fila del CSV) y ExtStat (tipos)
@@ -454,7 +455,7 @@ cargo run --profile fast                    # probar la app: recompila en segund
 
 Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)). Cubren el escaneo, los filtros, la exclusión de carpetas, el modo solo carpetas, la cancelación, la escritura segura y los tres formatos de salida, además de la CLI como programa (opciones, códigos de salida y mensajes de error). En Windows también crean *junctions* para probar el manejo de enlaces sin permisos de administrador.
 
-Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu. Al subir un tag `vX.Y.Z`, [otro workflow](.github/workflows/release.yml) compila los ejecutables y prepara un borrador de *Release* con sus sumas SHA256 y las notas de [`CHANGELOG.md`](CHANGELOG.md). [Dependabot](.github/dependabot.yml) propone cada mes las actualizaciones de dependencias y de Actions.
+Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu, y además se comprueba que el proyecto compila con la versión mínima de Rust (1.95). Al subir un tag `vX.Y.Z`, [otro workflow](.github/workflows/release.yml) compila los ejecutables y prepara un borrador de *Release* con sus sumas SHA256 y las notas de [`CHANGELOG.md`](CHANGELOG.md). [Dependabot](.github/dependabot.yml) propone cada mes las actualizaciones de dependencias y de Actions.
 
 ---
 

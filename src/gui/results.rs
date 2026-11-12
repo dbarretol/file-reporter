@@ -3,7 +3,7 @@
 
 use super::palette::Palette;
 use super::run::RunState;
-use super::util::{fmt_seconds, open_in_explorer, open_selecting};
+use super::util::{open_in_explorer, open_selecting};
 use super::widgets::{panel_title, result_row, RowAction};
 use super::{App, Copied};
 use crate::models::ExtStat;
@@ -40,7 +40,7 @@ impl App {
                     };
                     ui.label(egui::RichText::new(text).size(13.0));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let elapsed = fmt_seconds(run.started.elapsed().as_secs_f32());
+                        let elapsed = summary::fmt_seconds(run.started.elapsed().as_secs_f32());
                         ui.label(
                             egui::RichText::new(format!("⏱  {elapsed}"))
                                 .color(palette.muted)
@@ -194,7 +194,7 @@ impl App {
                 summary: s,
                 elapsed,
             } => {
-                let elapsed = fmt_seconds(elapsed.as_secs_f32());
+                let elapsed = summary::fmt_seconds(elapsed.as_secs_f32());
                 let copied = self.copied.as_ref().map(|(c, _)| c);
                 panel_title(
                     ui,
@@ -257,7 +257,7 @@ impl App {
                 // Neutral, no rojo: cancelar no es un error del programa,
                 // es una acción deliberada del usuario.
                 let noun = summary::found_noun(*dirs_only);
-                let elapsed = fmt_seconds(elapsed.as_secs_f32());
+                let elapsed = summary::fmt_seconds(elapsed.as_secs_f32());
                 panel_title(ui, palette.warning, "⏹", "Escaneo cancelado");
                 ui.add_space(4.0);
                 ui.label(
