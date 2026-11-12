@@ -200,7 +200,8 @@ pub fn parse_extensions<'a>(inputs: impl IntoIterator<Item = &'a str>) -> Vec<St
 /// Carpetas que suelen inflar el reporte de un proyecto de código sin
 /// aportar nada: control de versiones, dependencias y artefactos de
 /// compilación. Las ofrecen la opción `--exclude-common` de la CLI y la
-/// sugerencia "Comunes" de la GUI.
+/// sugerencia "Carpetas de proyectos" de la GUI, que además las omite de
+/// partida.
 pub const COMMON_EXCLUDED_DIRS: [&str; 7] = [
     ".git",
     "node_modules",
