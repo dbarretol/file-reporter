@@ -7,34 +7,24 @@
 
 **Escanea una carpeta y obtén, en segundos, un inventario completo de su contenido en CSV, Markdown y JSON.**
 
-File Reporter es una herramienta escrita en Rust con **interfaz gráfica** (para uso diario) y **línea de comandos** (para scripts y automatización). Recorre el directorio en paralelo y genera hasta tres reportes con la estructura de carpetas y los metadatos de cada archivo.
+File Reporter es una herramienta escrita en Rust que se usa con **interfaz gráfica** (para el día a día) o desde la **línea de comandos** (para scripts y automatización). Recorre la carpeta en paralelo y genera hasta tres reportes con la estructura de carpetas y los datos de cada archivo: tamaño, fechas y ruta.
 
-```text
-$ file-reporter C:\Demo\Proyecto
+<p align="center">
+  <img src="docs/images/gui-resultado.png" alt="Ventana de resultado de File Reporter: tres reportes generados, siete archivos, dos carpetas omitidas por nombre y una tabla de tipos de archivo con barras de porcentaje" width="760">
+</p>
 
-✅ Reportes generados correctamente:
-   📄 CSV:      C:\Demo\Proyecto\report.csv
-   📄 Markdown: C:\Demo\Proyecto\report.md
-   📄 JSON:     C:\Demo\Proyecto\report.json
+---
 
-📊 Archivos procesados: 4 · 1.3 MB
+## ⚡ Inicio rápido
 
-🗂️  Tipos de archivo (por tamaño):
-   .pdf                     1 arch. ·    1.3 MB ·  99.4 %
-   .rs                      2 arch. ·    6.4 KB ·   0.5 %
-   .md                      1 arch. ·    1.8 KB ·   0.1 %
-⏱️  Tiempo: 1.98ms
-```
+1. Descarga el ejecutable para tu sistema desde [**Releases**](https://github.com/dbarretol/file-reporter/releases/latest).
+2. Ábrelo con doble clic, arrastra una carpeta a la ventana y pulsa **▶ Generar reportes**.
+3. Los reportes (`report.csv`, `report.md` y `report.json`) quedan en la carpeta escaneada. La ventana de resultado permite abrirlos.
 
-```text
-C:\Demo\Proyecto
-├── docs
-│   └── manual.pdf
-├── src
-│   ├── utils
-│   │   └── helpers.rs
-│   └── main.rs
-└── README.md
+¿Prefieres la terminal?
+
+```bash
+file-reporter /ruta/a/escanear
 ```
 
 ---
@@ -44,7 +34,7 @@ C:\Demo\Proyecto
 - [¿Para qué sirve?](#-para-qué-sirve)
 - [Características](#-características)
 - [Instalación](#-instalación)
-- [Uso](#-uso)
+- [Uso](#-uso): [interfaz gráfica](#️-interfaz-gráfica) · [línea de comandos](#️-línea-de-comandos)
 - [Reportes generados](#-reportes-generados)
 - [Cómo funciona](#-cómo-funciona)
 - [Desarrollo](#-desarrollo)
@@ -56,8 +46,8 @@ C:\Demo\Proyecto
 
 ## 💡 ¿Para qué sirve?
 
-- **Auditar un disco o carpeta compartida:** qué hay, cuánto ocupa y cuándo se modificó, en una hoja de Excel.
-- **Documentar la estructura de un proyecto:** pega el árbol de `report.md` en tu documentación.
+- **Auditar un disco o una carpeta compartida:** qué hay, cuánto ocupa y cuándo se modificó, en una hoja de Excel.
+- **Documentar la estructura de un proyecto:** copia el árbol de `report.md` en tu documentación.
 - **Inventariar tipos concretos de archivo:** por ejemplo, todos los `pdf` y `docx` de una unidad.
 - **Alimentar otros procesos:** el JSON jerárquico se integra fácilmente en scripts o pipelines.
 
@@ -67,34 +57,31 @@ C:\Demo\Proyecto
 
 **Reportes**
 - 📊 Tres formatos a la vez: **CSV** (listo para Excel), **Markdown** (árbol estilo `tree`) y **JSON** (jerárquico).
-- 📅 Metadatos por archivo: nombre, extensión, tamaño (MB y bytes exactos), fechas de creación y modificación, y ruta.
-- 🎯 **Filtro por extensiones** (`pdf, docx, jpg…`).
-- 📂 **Modo solo carpetas:** genera únicamente la jerarquía de directorios, sin archivos.
+- 📅 Datos de cada archivo: nombre, extensión, tamaño (en MB y en bytes exactos), fechas de creación y modificación, y ruta.
 - 🗂️ **Resumen por tipo de archivo:** cantidad, tamaño y porcentaje de cada extensión, en la GUI, en la consola y en `report.md`.
-- 🚫 **Omite carpetas por nombre** en cualquier nivel (`.git`, `node_modules`, `target`…), sin llegar a leerlas, y al terminar indica cuántas omitió y cuáles.
+- 🎯 **Filtro por extensiones** (`pdf, docx, jpg…`) y **modo solo carpetas** (solo la jerarquía de directorios).
+- 🚫 **Omite carpetas por nombre** en cualquier nivel (`.git`, `node_modules`, `target`…) sin llegar a leerlas, y al terminar indica cuántas omitió.
+- 🏷️ **Nombre de los reportes a elección**, para no pisar los de otra carpeta.
 
-**Rendimiento y robustez**
-- 🚀 Escaneo **paralelo** con [`rayon`](https://crates.io/crates/rayon), en una sola pasada por el disco.
-- 🛡️ Sigue funcionando ante carpetas sin permisos y avisa cuántos elementos se omitieron (con `-v`, cuáles y por qué).
-- 🔁 Detecta symlinks y junctions cíclicos para no quedarse colgado.
+**Robustez**
+- 🚀 Escaneo **en paralelo**, en una sola pasada por el disco.
+- 🛡️ Sigue funcionando ante carpetas sin permisos y avisa de qué no pudo leer y por qué.
+- 🔁 No sigue enlaces simbólicos ni *junctions*, así que no se queda atrapado en ciclos.
+- 💾 **Escritura segura:** si algo falla al guardar un reporte (disco lleno, archivo abierto en Excel…), el anterior queda intacto.
 - 🔒 CSV protegido contra *formula injection*.
-- 💾 Escritura segura: si algo falla al guardar un reporte (disco lleno, archivo abierto en Excel…), el anterior queda intacto.
-
-**Línea de comandos**
-- ⏳ Contador de archivos encontrados, carpetas revisadas y tiempo transcurrido mientras escanea (se oculta si la salida se redirige).
-- 🔎 `-v/--verbose`: lista lo omitido y el motivo (sin acceso, enlaces no seguidos, carpetas excluidas).
-- 🧩 Todas las opciones de la GUI (filtros, exclusiones, formatos, solo carpetas), listas para scripts.
 
 **Interfaz gráfica**
-- 🖱️ Arrastra y suelta una carpeta sobre la ventana, usa "Examinar…" o elige una de las 5 últimas con 🕘.
-- ✅ Valida las rutas mientras escribes e indica dónde se guardarán los reportes.
-- 📈 Contador en vivo de archivos encontrados y carpetas revisadas, y tiempo transcurrido; **cancela** en cualquier momento con el botón o con Esc.
-- 📊 Resultado en una ventana propia: archivos, tamaño total, tiempo y tipos de archivo; abre o copia la ruta de cada reporte.
-- 🧾 Dice qué quedó fuera: las carpetas omitidas por nombre y, en una lista desplegable que se puede copiar, los elementos sin acceso con su motivo.
-- 🔔 Si la ventana está en segundo plano, parpadea en la barra de tareas al terminar.
-- ⚠️ Antes de sobrescribir reportes anteriores, pregunta: sobrescribirlos o guardar los nuevos con otro nombre (`report-<carpeta>-<fecha>`).
-- ♻️ Recuerda rutas, opciones y tema entre sesiones.
-- 🎨 Tema claro, oscuro o el del sistema operativo, a elegir en la cabecera.
+- 🖱️ Arrastra una carpeta, usa "Examinar…" o elige una de las 5 últimas (🕘).
+- 🧭 Formulario simple: lo esencial arriba y el resto en **Opciones**, con un resumen de lo elegido.
+- 📈 Progreso en vivo (archivos encontrados y carpetas revisadas); **cancela** en cualquier momento con Esc.
+- 🧾 Resultado claro: reportes (abrir o copiar su ruta), tipos de archivo y lo que quedó fuera, con su motivo.
+- ⚠️ Antes de sobrescribir reportes anteriores, ofrece guardar los nuevos con otro nombre.
+- 🎨 Tema claro, oscuro o el del sistema; recuerda rutas y opciones entre sesiones.
+
+**Línea de comandos**
+- 🧩 Las mismas opciones que la GUI, listas para scripts.
+- ⏳ Indicador de progreso mientras escanea (se oculta si la salida se redirige).
+- 🔎 `-v`: lista lo omitido y el motivo.
 
 ---
 
@@ -109,7 +96,8 @@ En [**Releases**](https://github.com/dbarretol/file-reporter/releases/latest) ha
 | Windows (64 bits) | `file-reporter-vX.Y.Z-windows-x64.exe` |
 | Linux (64 bits) | `file-reporter-vX.Y.Z-linux-x64.tar.gz` |
 
-En Windows basta con abrir el `.exe` (doble clic para la interfaz gráfica). Como el ejecutable no está firmado, SmartScreen puede avisar la primera vez: *Más información → Ejecutar de todas formas*. En Linux, descomprime el archivo y ejecuta `./file-reporter`; la interfaz gráfica necesita GTK 3, que traen la mayoría de escritorios.
+- **Windows:** abre el `.exe` con doble clic. Como el ejecutable no está firmado, SmartScreen puede avisar la primera vez: *Más información → Ejecutar de todas formas*.
+- **Linux:** descomprime el archivo y ejecuta `./file-reporter`. La interfaz gráfica necesita GTK 3, que traen la mayoría de escritorios.
 
 ### Compilar desde el código fuente
 
@@ -129,7 +117,7 @@ cargo build --release
 
 El ejecutable queda en `target/release/file-reporter` (`file-reporter.exe` en Windows).
 
-> Probado principalmente en **Windows**; también compila en Linux y macOS.
+> Se prueba en **Windows** y **Linux** en cada cambio. En macOS debería compilar, pero no se prueba.
 
 ---
 
@@ -139,25 +127,35 @@ El mismo ejecutable funciona en dos modos:
 
 | Cómo lo ejecutas | Modo |
 |---|---|
-| Sin argumentos (o doble clic en el `.exe`) | 🖥️ Interfaz gráfica |
-| Con una ruta como argumento | ⌨️ Línea de comandos |
+| Sin argumentos (o con doble clic) | 🖥️ Interfaz gráfica |
+| Con una carpeta como argumento | ⌨️ Línea de comandos |
 
 ### 🖥️ Interfaz gráfica
 
-```bash
-./target/release/file-reporter
+```mermaid
+flowchart TD
+    A["📁 Elegir la carpeta a escanear<br/>escribir, Examinar…, 🕘 recientes o arrastrar"] --> B["⚙️ Opciones (opcional)<br/>extensiones · carpetas a omitir · formatos"]
+    B --> C["▶ Generar reportes"]
+    C --> D{"¿Ya hay reportes<br/>en la carpeta de salida?"}
+    D -- "No" --> E["⏳ Escaneo con progreso en vivo<br/>Esc cancela"]
+    D -- "Sí" --> F{"Sobrescribir, guardar con<br/>otro nombre o cancelar"}
+    F -- "Sobrescribir u otro nombre" --> E
+    F -- "Cancelar" --> A
+    E --> G["✅ Resultado: reportes, tipos de archivo<br/>y lo que quedó fuera"]
 ```
 
-1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…", elige una reciente con 🕘 o arrástrala a la ventana. Debajo se ve el final de la ruta, que el campo corta si es larga.
+1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…", elige una reciente con 🕘 o arrástrala a la ventana. Debajo se ve el final de la ruta, por si el campo la corta.
 2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
+3. *(Opcional)* Despliega **Opciones**. Plegado, muestra un resumen de lo elegido (p. ej. "Todas las extensiones · omite 7 carpetas · CSV + MD + JSON"). Dentro puedes:
+   - escribir las **extensiones** a incluir (las sugerencias se suman a lo escrito; pulsarlas otra vez las quita);
+   - revisar las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas;
+   - marcar **Solo carpetas** para obtener solo la jerarquía de directorios;
+   - desmarcar los **formatos** que no necesites.
+4. Pulsa **▶ Generar reportes** (o Enter, si no estás escribiendo en un campo). Al terminar se abre la ventana de resultado. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
 
-El resto está en **Opciones**, que aparece plegado al abrir la app con un resumen de lo elegido (p. ej. "Todas las extensiones · omite 7 carpetas · CSV + MD + JSON"):
-
-3. *(Opcional)* Escribe las **extensiones** a incluir. Las sugerencias se suman a lo escrito; pulsarlas otra vez las quita.
-4. *(Opcional)* Revisa las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas, o pulsa la sugerencia "Carpetas de proyectos" para quitarlas o volver a ponerlas.
-5. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
-6. *(Opcional)* Desmarca los **formatos** que no necesites (CSV, Markdown, JSON).
-7. Pulsa **▶ Generar reportes** (o Enter, si no estás escribiendo en un campo). Al terminar se abre una ventana con el resultado: los reportes (abrir o copiar su ruta), la carpeta de salida y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
+<p align="center">
+  <img src="docs/images/gui-opciones.png" alt="Formulario de File Reporter con la carpeta a escanear, la carpeta de salida y Opciones desplegado: extensiones, carpetas a omitir, solo carpetas y formatos" width="760">
+</p>
 
 ### ⌨️ Línea de comandos
 
@@ -169,13 +167,11 @@ file-reporter /ruta/a/escanear
 file-reporter /ruta --ext pdf,docx
 file-reporter /ruta -e jpg -e png
 
-# Guardar los reportes en otra carpeta
-file-reporter /ruta -o /ruta/reportes
+# Guardar los reportes en otra carpeta y con otro nombre (facturas.csv, …)
+file-reporter /ruta -o /ruta/reportes -n facturas
 
-# Solo la estructura de carpetas
+# Solo la estructura de carpetas, o solo algunos formatos
 file-reporter /ruta -d
-
-# Solo algunos formatos
 file-reporter /ruta -f csv,md
 
 # Omitir carpetas por nombre (.git, node_modules, target… con --exclude-common)
@@ -192,20 +188,45 @@ En Windows (PowerShell):
 .\file-reporter.exe "D:\MisDocumentos" -e pdf,docx -o "D:\reportes"
 ```
 
+Así se ve una ejecución sobre un proyecto de ejemplo:
+
+```text
+> file-reporter E:\Demo\Proyecto --exclude-common
+🚫 Omitiendo carpetas: .git, node_modules, target, __pycache__, .venv, dist, build
+🔍 Escaneando: E:\Demo\Proyecto
+
+✅ Reportes generados correctamente:
+   📄 CSV:      E:\Demo\Proyecto\report.csv
+   📄 Markdown: E:\Demo\Proyecto\report.md
+   📄 JSON:     E:\Demo\Proyecto\report.json
+
+📊 Archivos procesados: 7 · 2.5 MB
+
+🗂️  Tipos de archivo (por tamaño):
+   .pdf                     1 arch. ·    1.3 MB ·  50.3 %
+   .jpg                     1 arch. ·  820.0 KB ·  31.7 %
+   .png                     1 arch. ·  410.0 KB ·  15.8 %
+   .xlsx                    1 arch. ·   48.0 KB ·   1.9 %
+   .rs                      2 arch. ·    7.0 KB ·   0.3 %
+   .md                      1 arch. ·    1.9 KB ·  <0.1 %
+🚫 2 carpetas omitidas por nombre (.git, build)
+⏱️  Tiempo: 5.26ms
+```
+
 | Opción | Descripción |
 |---|---|
 | `<PATH>` | Carpeta a escanear **(obligatorio)** |
 | `-e`, `--ext` | Extensiones a incluir, separadas por coma, punto y coma o espacio (`"pdf, .DOCX"` vale). Sin esta opción se incluyen todas |
 | `-o`, `--output` | Carpeta de salida (por defecto: la carpeta escaneada) |
+| `-n`, `--name` | Nombre de los reportes, sin extensión (`-n facturas` → `facturas.csv`, `facturas.md`, `facturas.json`). Por defecto, `report` |
 | `-d`, `--dirs-only` | Solo estructura de carpetas. No se puede combinar con `-e` |
-| `-x`, `--exclude` | Carpeta a omitir por nombre (no ruta), en cualquier nivel y con todo su contenido. Se puede repetir o separar por comas |
+| `-x`, `--exclude` | Carpeta a omitir por nombre (no por ruta), en cualquier nivel y con todo su contenido. Se puede repetir o separar por comas |
 | `--exclude-common` | Omite `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build` |
 | `-f`, `--format` | Reportes a generar: `csv`, `md` (o `markdown`), `json`, separados por coma. Sin esta opción se generan los tres |
-| `-n`, `--name` | Nombre de los reportes, sin extensión (`-n facturas` → `facturas.csv`, `facturas.md`, `facturas.json`). Por defecto, `report` |
 | `-v`, `--verbose` | Muestra qué se omitió y por qué: carpetas y archivos sin acceso, enlaces no seguidos y carpetas excluidas por nombre. `-vv` añade el detalle interno del proceso |
 | `-h`, `--help` / `-V`, `--version` | Ayuda / versión |
 
-Mientras escanea, la terminal muestra cuántos archivos lleva encontrados y cuántas carpetas ha revisado (en modo solo carpetas, cuántas carpetas lleva encontradas), y el tiempo transcurrido; después indica que está escribiendo los reportes. Al terminar, el indicador desaparece y queda el resumen. Si la salida se redirige a un archivo, o con `-v`, no se muestra.
+Mientras escanea, la terminal muestra cuántos archivos lleva encontrados, cuántas carpetas ha revisado y el tiempo transcurrido. Al terminar, el indicador desaparece y queda el resumen. Si la salida se redirige a un archivo, o con `-v`, no se muestra. Los errores se muestran en una línea (`❌ La ruta no existe: …`) y el programa termina con código 1.
 
 > **Sobre las extensiones:** se usa lo que va tras el **último** punto del nombre. `foo.tar.gz` tiene extensión `gz`, no `tar.gz`. Los archivos sin punto (`LICENSE`, `Makefile`) no tienen extensión y quedan fuera de cualquier filtro.
 
@@ -213,17 +234,16 @@ Mientras escanea, la terminal muestra cuántos archivos lleva encontrados y cuá
 
 ## 📁 Reportes generados
 
-Cada ejecución crea en la carpeta de salida estos archivos (los tres por defecto, o los elegidos con `-f` o en la GUI). Se llaman `report.*` salvo que se elija otro nombre con `-n` o, en la GUI, "Guardar con otro nombre" al ir a sobrescribir:
+Cada ejecución crea en la carpeta de salida los reportes elegidos (los tres por defecto). Se llaman `report.*` salvo que se elija otro nombre con `-n` o, en la GUI, con "Guardar con otro nombre" al ir a sobrescribir.
 
 | Archivo | Contenido | Ideal para |
 |---|---|---|
-| `report.csv` | Una fila por archivo con todos sus metadatos | Excel, Pandas, hojas de cálculo |
+| `report.csv` | Una fila por archivo con todos sus datos | Excel, Pandas, hojas de cálculo |
 | `report.md` | Árbol de carpetas y archivos estilo `tree`, y tabla de tipos de archivo | Documentación, READMEs |
-| `report.json` | Árbol completo con metadatos | Scripts e integraciones |
+| `report.json` | Árbol completo con los datos de cada archivo | Scripts e integraciones |
 
-Los reportes de corridas anteriores que haya en la carpeta escaneada (`report.*`, los del nombre elegido y los guardados con nombre automático) no se incluyen en el nuevo reporte.
-
-En **modo solo carpetas**, `report.md` y `report.json` contienen únicamente directorios y `report.csv` queda solo con la cabecera (lo mismo si el filtro de extensiones no encuentra nada).
+- Los reportes de ejecuciones anteriores que haya en la carpeta escaneada no se incluyen en el nuevo reporte.
+- En **modo solo carpetas**, `report.md` y `report.json` contienen solo directorios y `report.csv` queda solo con la cabecera (lo mismo si el filtro de extensiones no encuentra nada).
 
 <details>
 <summary><b>📊 report.csv</b>: columnas</summary>
@@ -245,7 +265,8 @@ UTF-8 con BOM y separador `;`, para que Excel lo abra correctamente sin configur
 
 ```text
 name;extension;size_mb;size_bytes;created;modified;created_iso;modified_iso;directory;full_path
-manual;pdf;1,270;1331200;23/10/2026;23/10/2026;2026-10-23T04:42:45.034591400+00:00;...;C:\Demo\Proyecto\docs;C:\Demo\Proyecto\docs\manual.pdf
+manual;pdf;1,270;1331200;12/11/2026;12/11/2026;2026-11-12T19:13:21.368492800+00:00;2026-11-12T19:13:21.369491400+00:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\manual.pdf
+presupuesto;xlsx;0,047;49152;12/11/2026;12/11/2026;2026-11-12T19:13:21.370620500+00:00;2026-11-12T19:13:21.370620500+00:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\presupuesto.xlsx
 ```
 
 Si un nombre, extensión o ruta empieza por `=`, `+`, `-`, `@`, tabulador o retorno de carro, se le antepone un apóstrofo para que Excel no lo ejecute como fórmula.
@@ -261,9 +282,13 @@ Si un nombre, extensión o ruta empieza por `=`, `+`, `-`, `@`, tabulador o reto
 # 📋 Estructura de Directorios
 
 ```
-C:\Demo\Proyecto
+E:\Demo\Proyecto
 ├── docs
-│   └── manual.pdf
+│   ├── manual.pdf
+│   └── presupuesto.xlsx
+├── fotos
+│   ├── equipo.png
+│   └── portada.jpg
 ├── src
 │   ├── utils
 │   │   └── helpers.rs
@@ -275,9 +300,12 @@ C:\Demo\Proyecto
 
 | Extensión | Archivos | Tamaño | % del tamaño |
 |---|--:|--:|--:|
-| .pdf | 1 | 1.3 MB | 99.4 % |
-| .rs | 2 | 6.4 KB | 0.5 % |
-| .md | 1 | 1.8 KB | 0.1 % |
+| .pdf | 1 | 1.3 MB | 50.3 % |
+| .jpg | 1 | 820.0 KB | 31.7 % |
+| .png | 1 | 410.0 KB | 15.8 % |
+| .xlsx | 1 | 48.0 KB | 1.9 % |
+| .rs | 2 | 7.0 KB | 0.3 % |
+| .md | 1 | 1.9 KB | <0.1 % |
 ````
 
 La tabla lista todas las extensiones, de mayor a menor tamaño total; no aparece en modo solo carpetas.
@@ -293,22 +321,22 @@ La tabla lista todas las extensiones, de mayor a menor tamaño total; no aparece
 {
   "type": "directory",
   "name": "Proyecto",
-  "path": "C:\\Demo\\Proyecto",
+  "path": "E:\\Demo\\Proyecto",
   "children": [
     {
       "type": "directory",
       "name": "docs",
-      "path": "C:\\Demo\\Proyecto\\docs",
+      "path": "E:\\Demo\\Proyecto\\docs",
       "children": [
         {
           "type": "file",
           "name": "manual.pdf",
-          "path": "C:\\Demo\\Proyecto\\docs\\manual.pdf",
+          "path": "E:\\Demo\\Proyecto\\docs\\manual.pdf",
           "size_mb": 1.26953125,
           "size_bytes": 1331200,
           "extension": "pdf",
-          "created": "2026-10-23T04:42:45.034591400Z",
-          "modified": "2026-10-23T04:42:45.034591400Z"
+          "created": "2026-11-12T19:13:21.368492800Z",
+          "modified": "2026-11-12T19:13:21.369491400Z"
         }
       ]
     }
@@ -316,19 +344,27 @@ La tabla lista todas las extensiones, de mayor a menor tamaño total; no aparece
 }
 ```
 
+(Fragmento: el resto de carpetas y archivos sigue la misma forma.)
+
 </details>
 
 ---
 
 ## 🔧 Cómo funciona
 
-CLI y GUI comparten exactamente la misma lógica; solo cambia la forma de recibir la configuración y de mostrar el progreso.
+La CLI y la GUI comparten la misma lógica; solo cambia cómo reciben la configuración y cómo muestran el progreso.
 
-```text
-  CLI (clap) ──┐
-               ├──► runner ──► scanner (rayon, en paralelo) ──► árbol en memoria ──► reporters ──► CSV / MD / JSON
-  GUI (egui) ──┘       ▲
-                       └── progreso, cancelación y elementos omitidos (atómicos compartidos)
+```mermaid
+flowchart LR
+    CLI["⌨️ CLI<br/>clap"] --> R
+    GUI["🖥️ GUI<br/>egui"] --> R
+    R["runner<br/>valida y coordina"] --> S["scanner<br/>recorrido en paralelo<br/>(rayon)"]
+    S --> T[("árbol<br/>en memoria")]
+    T --> W["reporters<br/>escritura segura"]
+    W --> CSV["report.csv"]
+    W --> MD["report.md"]
+    W --> JSON["report.json"]
+    S -. "progreso, cancelación<br/>y lo omitido" .-> R
 ```
 
 ```text
@@ -338,20 +374,21 @@ src/
 ├── cli.rs           # Modo CLI: argumentos (clap), indicador de progreso y resumen final
 ├── gui/             # Interfaz gráfica (egui/eframe)
 │   ├── mod.rs       # Arranque, estado de la app y paneles fijos
-│   ├── form.rs      # Formulario y botones
-│   ├── run.rs       # Estado de la corrida e hilo de escaneo
+│   ├── form.rs      # Formulario, validación de rutas y botones
+│   ├── run.rs       # Estado de la ejecución e hilo de escaneo
 │   ├── results.rs   # Progreso y ventana de resultado
 │   ├── dialogs.rs   # Diálogo de sobrescritura y arrastrar y soltar
 │   └── …            # widgets, paleta de colores, utilidades
 ├── icon.rs          # Icono de la app, dibujado por código (sin imágenes)
-├── runner.rs        # Flujo común: escanear → escribir reportes
+├── runner.rs        # Flujo común: validar → escanear → escribir reportes
 ├── summary.rs       # Textos del resumen que comparten CLI y GUI (tamaños, tipos, avisos)
-├── scanner.rs       # Recorrido paralelo del directorio
+├── scanner.rs       # Recorrido paralelo de la carpeta
 ├── models.rs        # Node (árbol), FileRecord (fila del CSV) y ExtStat (tipos)
-└── reporters/      # Un módulo por formato; escritura segura a través de un temporal
+└── reporters/       # Un módulo por formato; escritura segura a través de un temporal
     ├── csv.rs       # CSV para Excel (BOM + ;)
     ├── markdown.rs  # Árbol estilo tree y tabla de tipos
     └── json.rs      # JSON con formato legible
+tests/cli.rs         # Tests que ejecutan el programa compilado
 ```
 
 <details>
@@ -359,11 +396,12 @@ src/
 
 <br>
 
-- **Una sola pasada por el disco:** no se cuentan los archivos antes de escanearlos. El progreso se reporta en vivo mientras se recorre el árbol.
-- **Pocas llamadas al sistema:** el tipo y los metadatos de cada entrada salen de la propia lectura del directorio (en Windows, sin abrir cada archivo); los archivos que no pasan el filtro se descartan antes de leer sus metadatos, y el CSV y el Markdown se escriben directamente desde el árbol, sin una copia intermedia en memoria.
+- **Una sola pasada por el disco:** no se cuentan los archivos antes de escanearlos. El progreso se informa en vivo mientras se recorre el árbol.
+- **Pocas llamadas al sistema:** el tipo y los datos de cada entrada salen de la propia lectura del directorio (en Windows, sin abrir cada archivo); los archivos que no pasan el filtro se descartan antes de leer sus datos, y el CSV y el Markdown se escriben directamente desde el árbol, sin una copia intermedia en memoria.
+- **Escritura segura:** cada reporte se escribe en un archivo temporal que solo reemplaza al anterior si todo fue bien.
 - **Symlinks y junctions:** no se siguen (se detectan con el tipo de la entrada), lo que evita ciclos. La carpeta raíz elegida por el usuario sí se sigue aunque sea un enlace (por ejemplo, carpetas de OneDrive).
-- **Errores por elemento:** una carpeta sin permisos se omite y se contabiliza; no detiene el escaneo. Las carpetas omitidas a propósito (por nombre) no cuentan como errores. Cada omisión se registra con [`tracing`](https://crates.io/crates/tracing), que la CLI muestra con `-v`.
-- **GUI siempre responsiva:** el escaneo corre en un hilo aparte con pila ampliada y `catch_unwind`, de modo que un panic interno se muestra como error y no cierra la aplicación. La cancelación se distingue de un error real mediante una bandera compartida. Las rutas del formulario se comprueban en otro hilo cuando llevan 300 ms sin cambiar, así que una carpeta de red lenta no congela la ventana mientras se escribe.
+- **Errores por elemento:** una carpeta sin permisos se omite y se registra; no detiene el escaneo. Las carpetas omitidas a propósito (por nombre) no cuentan como errores. Cada omisión se registra con [`tracing`](https://crates.io/crates/tracing), que la CLI muestra con `-v`.
+- **GUI siempre responsiva:** el escaneo corre en un hilo aparte con pila ampliada y `catch_unwind`, de modo que un fallo interno se muestra como error y no cierra la aplicación. Las rutas del formulario se comprueban en otro hilo cuando llevan 300 ms sin cambiar, así que una carpeta de red lenta no congela la ventana.
 - **Rutas Unicode:** acentos y emojis se conservan en los tres reportes, y la exclusión de los propios reportes compara rutas sin distinguir mayúsculas, también fuera de ASCII.
 
 </details>
@@ -387,15 +425,15 @@ src/
 ## 🧪 Desarrollo
 
 ```bash
-cargo test                          # tests (unitarios y de la CLI como programa, en tests/cli.rs)
-cargo fmt --check                   # formato
+cargo test                                  # tests unitarios y de la CLI (tests/cli.rs)
+cargo fmt --check                           # formato
 cargo clippy --all-targets -- -D warnings   # lint
-cargo run --profile fast            # probar la app: recompila en segundos (sin LTO)
+cargo run --profile fast                    # probar la app: recompila en segundos (sin LTO)
 ```
 
 `--release` activa LTO, que da el ejecutable más rápido pero tarda minutos en recompilar; el perfil `fast` optimiza casi igual y es el indicado mientras se desarrolla.
 
-Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)) y cubren escaneo, filtros, exclusión de carpetas, modo solo carpetas, cancelación, estadísticas por tipo, los tres formatos de salida y la protección del CSV. En Windows también crean *junctions* para probar el manejo de enlaces sin necesidad de permisos de administrador.
+Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)). Cubren el escaneo, los filtros, la exclusión de carpetas, el modo solo carpetas, la cancelación, la escritura segura y los tres formatos de salida, además de la CLI como programa (opciones, códigos de salida y mensajes de error). En Windows también crean *junctions* para probar el manejo de enlaces sin permisos de administrador.
 
 Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu. Al subir un tag `vX.Y.Z`, [otro workflow](.github/workflows/release.yml) compila los ejecutables y prepara un borrador de *Release* con las notas de [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -405,12 +443,22 @@ Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.githu
 
 - [ ] Instalador `.msi` para Windows ([#15](https://github.com/dbarretol/file-reporter/issues/15)).
 - [ ] Vista previa del árbol antes de exportar ([#13](https://github.com/dbarretol/file-reporter/issues/13)).
+- [ ] Compatibilidad con lectores de pantalla ([#53](https://github.com/dbarretol/file-reporter/issues/53)).
+
+Los cambios de cada versión están en [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
 ## 🤝 Contribuciones
 
-Las contribuciones son bienvenidas. Para cambios grandes, abre primero un *issue* para comentar la propuesta. Después, haz un fork, crea una rama desde `dev` y envía un *pull request* contra `dev` describiendo los cambios (`main` solo recibe versiones estables).
+Las contribuciones son bienvenidas. Para cambios grandes, abre primero un *issue* para comentar la propuesta. Después, haz un fork, crea una rama desde `dev` y envía un *pull request* contra `dev` describiendo los cambios.
+
+```mermaid
+flowchart LR
+    F["tu rama<br/>fix/… o feat/…"] -- "pull request" --> D["dev<br/>integración"]
+    D -- "pull request" --> M["main<br/>versiones estables"]
+    M -- "tag vX.Y.Z" --> R["📦 Release<br/>.exe y .tar.gz"]
+```
 
 ---
 
