@@ -46,6 +46,11 @@ pub struct Cli {
     #[arg(short = 'f', long = "format", value_enum, value_delimiter = ',')]
     pub formats: Vec<ReportFormat>,
 
+    /// Nombre de los reportes, sin extensión (ej: -n facturas → facturas.csv,
+    /// facturas.md, facturas.json).
+    #[arg(short = 'n', long = "name", value_name = "NOMBRE", default_value = runner::DEFAULT_REPORT_NAME)]
+    pub name: String,
+
     /// Mostrar qué se omitió y por qué: carpetas y archivos sin acceso,
     /// enlaces no seguidos y carpetas excluidas por nombre. Con -vv, también
     /// el detalle interno del proceso.
@@ -136,6 +141,7 @@ pub fn run(args: &Cli) -> Result<()> {
             dirs_only: args.dirs_only,
             exclude_dirs,
             formats: args.formats_or_all(),
+            report_name: args.name.clone(),
         },
         args.verbose == 0,
     )?;
@@ -277,6 +283,7 @@ mod tests {
             exclude: vec![],
             exclude_common: false,
             formats: vec![],
+            name: runner::DEFAULT_REPORT_NAME.to_string(),
             verbose: 0,
         }
     }

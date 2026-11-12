@@ -2,6 +2,22 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [0.6.0] - 2026-11-12
+
+### Añadido
+
+- **Elegir el nombre de los reportes:** opción `-n/--name` en la CLI (`-n facturas` → `facturas.csv`, `facturas.md`, `facturas.json`) y, en la GUI, un botón "Guardar con otro nombre" en el diálogo de sobrescritura, que guarda los nuevos como `report-<carpeta>-<AAAA-MM-DD>` (con `-2`, `-3`… si ya existe) y conserva los anteriores. Los reportes con esos nombres no se incluyen al volver a escanear la misma carpeta ([#50](https://github.com/dbarretol/file-reporter/issues/50)).
+
+### Cambiado
+
+- **GUI: formulario más simple:** arriba solo las carpetas a escanear y de salida; extensiones, carpetas a omitir, "Solo carpetas" y formatos pasan a "Opciones", que aparece plegado al abrir la app con un resumen de una línea. Debajo de cada carpeta se ve el final de la ruta, que el campo corta si es larga. Las etiquetas pierden los emoji, poco legibles a ese tamaño ([#51](https://github.com/dbarretol/file-reporter/issues/51)).
+- **GUI:** Enter ya no lanza el escaneo mientras se escribe en un campo; los escaneos de menos de un segundo muestran "<1 s" en vez de "0s"; la barra de estado muestra la versión; el diálogo de sobrescritura es un modal como la ventana de resultado, que se cierra con Esc o con un clic fuera ([#51](https://github.com/dbarretol/file-reporter/issues/51)).
+- **Menos memoria al escribir `report.md`:** se escribe a medida que se recorre el árbol, en vez de armarlo entero en memoria. Con `C:\Windows` (~119 000 archivos) el pico baja de ~210 MB a ~157 MB; el contenido no cambia ([#54](https://github.com/dbarretol/file-reporter/issues/54)).
+
+### Corregido
+
+- **GUI: la ventana ya no se congela con rutas de red lentas.** La carpeta escrita se comprueba en otro hilo cuando lleva 300 ms sin cambiar; mientras tanto, el botón indica "Comprobando…". Antes, una ruta de red que no responde dejaba la ventana como "No responde" hasta ~27 s ([#54](https://github.com/dbarretol/file-reporter/issues/54)).
+
 ## [0.5.0] - 2026-11-12
 
 ### Añadido
@@ -85,6 +101,7 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
+[0.6.0]: https://github.com/dbarretol/file-reporter/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dbarretol/file-reporter/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/dbarretol/file-reporter/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/dbarretol/file-reporter/compare/v0.3.0...v0.4.0

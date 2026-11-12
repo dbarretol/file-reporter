@@ -3,6 +3,7 @@
 
 use super::palette::Palette;
 use super::util::dropped_path_to_input_dir;
+use super::widgets::panel_title;
 use super::App;
 use eframe::egui;
 
@@ -53,28 +54,55 @@ impl App {
         };
 
         let mut confirmed = false;
-        // Esc cierra el diálogo como si se pulsara "Cancelar" — sin esto, el
-        // diálogo no responde al teclado en absoluto.
-        let mut cancelled = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let mut rename = false;
+        let mut cancelled = false;
 
-        egui::Window::new("⚠  Sobrescribir reportes existentes")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .show(ctx, |ui| {
-                ui.label("Ya existen reportes de una corrida anterior en la carpeta de salida:");
-                ui.add_space(6.0);
+        // Modal (como la ventana de resultado): bloquea el formulario por
+        // debajo y se cierra con Esc o con un clic fuera, como "Cancelar".
+        let width = (ctx.content_rect().width() - 80.0).clamp(280.0, 560.0);
+        let response = egui::Modal::new(egui::Id::unique("overwrite_modal")).show(ctx, |ui| {
+            ui.set_width(width);
+            let palette = Palette::of(ui);
+            panel_title(
+                ui,
+                palette.warning,
+                "⚠",
+                "Ya hay reportes en la carpeta de salida",
+            );
+            ui.add_space(6.0);
+            if let Some(dir) = pending.existing.first().and_then(|p| p.parent()) {
+                ui.label(
+                    egui::RichText::new(dir.display().to_string())
+                        .color(palette.muted)
+                        .size(11.0),
+                );
+            }
+            {
                 for f in &pending.existing {
-                    // Espacio no separable: si la ruta no cabe en una línea,
-                    // que no se corte justo después de la viñeta.
+                    let name = f.file_name().map(|n| n.to_string_lossy().into_owned());
                     ui.label(
-                        egui::RichText::new(format!("•\u{a0}{}", f.display()))
+                        egui::RichText::new(format!("•\u{a0}{}", name.unwrap_or_default()))
                             .monospace()
-                            .size(11.0),
+                            .size(12.0),
                     );
                 }
                 ui.add_space(10.0);
-                ui.label("¿Deseas sobrescribirlos?");
+                ui.label("¿Deseas sobrescribirlos o guardar los nuevos con otro nombre?");
+                let extensions: Vec<&str> =
+                    pending.cfg.formats.iter().map(|f| f.extension()).collect();
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Con otro nombre: {}.{}",
+                        pending.alt_name,
+                        if extensions.len() == 1 {
+                            extensions[0].to_string()
+                        } else {
+                            format!("{{{}}}", extensions.join(","))
+                        }
+                    ))
+                    .monospace()
+                    .size(11.0),
+                );
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if ui
@@ -88,14 +116,28 @@ impl App {
                     {
                         confirmed = true;
                     }
+                    if ui
+                        .button("Guardar con otro nombre")
+                        .on_hover_text("Conserva los reportes anteriores")
+                        .clicked()
+                    {
+                        rename = true;
+                    }
                     if ui.button("Cancelar").clicked() {
                         cancelled = true;
                     }
                 });
-            });
+            }
+        });
+        if response.should_close() {
+            cancelled = true;
+        }
 
-        if confirmed {
-            if let Some(pending) = self.pending_confirm.take() {
+        if confirmed || rename {
+            if let Some(mut pending) = self.pending_confirm.take() {
+                if rename {
+                    pending.cfg.report_name = pending.alt_name;
+                }
                 self.start_run(pending.cfg);
             }
         } else if cancelled {

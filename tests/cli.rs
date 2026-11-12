@@ -201,3 +201,35 @@ fn error_causes_are_shown_on_the_same_line() {
     let message = err.trim_end();
     assert!(message.matches(": ").count() >= 1, "{err}");
 }
+
+#[test]
+fn name_option_changes_the_report_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = sample_input(dir.path());
+    let out = dir.path().join("out");
+
+    let o = file_reporter(&[s(&input), "-o", s(&out), "-n", "facturas", "-f", "csv,md"]);
+
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(out.join("facturas.csv").is_file());
+    assert!(out.join("facturas.md").is_file());
+    assert!(!out.join("report.csv").exists());
+    assert!(stdout(&o).contains("facturas.csv"));
+}
+
+#[test]
+fn invalid_name_fails_before_writing_anything() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = sample_input(dir.path());
+    let out = dir.path().join("out");
+
+    let o = file_reporter(&[s(&input), "-o", s(&out), "-n", "a/b"]);
+
+    assert_eq!(o.status.code(), Some(1));
+    let err = stderr(&o);
+    assert!(
+        err.starts_with("❌ El nombre de los reportes no puede contener «/»"),
+        "{err}"
+    );
+    assert!(!out.exists());
+}
