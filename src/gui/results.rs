@@ -394,7 +394,7 @@ fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], to
                 });
             if stats.len() > TOP_TYPES + 1 {
                 ui.label(
-                    egui::RichText::new("La lista completa está en report.md.")
+                    egui::RichText::new("La lista completa está en el reporte Markdown.")
                         .color(palette.muted)
                         .size(11.0),
                 );
