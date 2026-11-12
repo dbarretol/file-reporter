@@ -53,6 +53,7 @@ impl App {
         };
 
         let mut confirmed = false;
+        let mut rename = false;
         // Esc cierra el diálogo como si se pulsara "Cancelar" — sin esto, el
         // diálogo no responde al teclado en absoluto.
         let mut cancelled = ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -74,7 +75,22 @@ impl App {
                     );
                 }
                 ui.add_space(10.0);
-                ui.label("¿Deseas sobrescribirlos?");
+                ui.label("¿Deseas sobrescribirlos o guardar los nuevos con otro nombre?");
+                let extensions: Vec<&str> =
+                    pending.cfg.formats.iter().map(|f| f.extension()).collect();
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Con otro nombre: {}.{}",
+                        pending.alt_name,
+                        if extensions.len() == 1 {
+                            extensions[0].to_string()
+                        } else {
+                            format!("{{{}}}", extensions.join(","))
+                        }
+                    ))
+                    .monospace()
+                    .size(11.0),
+                );
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if ui
@@ -88,14 +104,24 @@ impl App {
                     {
                         confirmed = true;
                     }
+                    if ui
+                        .button("Guardar con otro nombre")
+                        .on_hover_text("Conserva los reportes anteriores")
+                        .clicked()
+                    {
+                        rename = true;
+                    }
                     if ui.button("Cancelar").clicked() {
                         cancelled = true;
                     }
                 });
             });
 
-        if confirmed {
-            if let Some(pending) = self.pending_confirm.take() {
+        if confirmed || rename {
+            if let Some(mut pending) = self.pending_confirm.take() {
+                if rename {
+                    pending.cfg.report_name = pending.alt_name;
+                }
                 self.start_run(pending.cfg);
             }
         } else if cancelled {

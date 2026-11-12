@@ -92,7 +92,7 @@ C:\Demo\Proyecto
 - 📊 Resultado en una ventana propia: archivos, tamaño total, tiempo y tipos de archivo; abre o copia la ruta de cada reporte.
 - 🧾 Dice qué quedó fuera: las carpetas omitidas por nombre y, en una lista desplegable que se puede copiar, los elementos sin acceso con su motivo.
 - 🔔 Si la ventana está en segundo plano, parpadea en la barra de tareas al terminar.
-- ⚠️ Pide confirmación antes de sobrescribir reportes anteriores.
+- ⚠️ Antes de sobrescribir reportes anteriores, pregunta: sobrescribirlos o guardar los nuevos con otro nombre (`report-<carpeta>-<fecha>`).
 - ♻️ Recuerda rutas, opciones y tema entre sesiones.
 - 🎨 Tema claro, oscuro o el del sistema operativo, a elegir en la cabecera.
 
@@ -198,6 +198,7 @@ En Windows (PowerShell):
 | `-x`, `--exclude` | Carpeta a omitir por nombre (no ruta), en cualquier nivel y con todo su contenido. Se puede repetir o separar por comas |
 | `--exclude-common` | Omite `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build` |
 | `-f`, `--format` | Reportes a generar: `csv`, `md` (o `markdown`), `json`, separados por coma. Sin esta opción se generan los tres |
+| `-n`, `--name` | Nombre de los reportes, sin extensión (`-n facturas` → `facturas.csv`, `facturas.md`, `facturas.json`). Por defecto, `report` |
 | `-v`, `--verbose` | Muestra qué se omitió y por qué: carpetas y archivos sin acceso, enlaces no seguidos y carpetas excluidas por nombre. `-vv` añade el detalle interno del proceso |
 | `-h`, `--help` / `-V`, `--version` | Ayuda / versión |
 
@@ -209,13 +210,15 @@ Mientras escanea, la terminal muestra cuántos archivos lleva encontrados y cuá
 
 ## 📁 Reportes generados
 
-Cada ejecución crea en la carpeta de salida estos archivos (los tres por defecto, o los elegidos con `-f` o en la GUI):
+Cada ejecución crea en la carpeta de salida estos archivos (los tres por defecto, o los elegidos con `-f` o en la GUI). Se llaman `report.*` salvo que se elija otro nombre con `-n` o, en la GUI, "Guardar con otro nombre" al ir a sobrescribir:
 
 | Archivo | Contenido | Ideal para |
 |---|---|---|
 | `report.csv` | Una fila por archivo con todos sus metadatos | Excel, Pandas, hojas de cálculo |
 | `report.md` | Árbol de carpetas y archivos estilo `tree`, y tabla de tipos de archivo | Documentación, READMEs |
 | `report.json` | Árbol completo con metadatos | Scripts e integraciones |
+
+Los reportes de corridas anteriores que haya en la carpeta escaneada (`report.*`, los del nombre elegido y los guardados con nombre automático) no se incluyen en el nuevo reporte.
 
 En **modo solo carpetas**, `report.md` y `report.json` contienen únicamente directorios y `report.csv` queda solo con la cabecera (lo mismo si el filtro de extensiones no encuentra nada).
 

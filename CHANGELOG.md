@@ -2,6 +2,12 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Añadido
+
+- **Elegir el nombre de los reportes:** opción `-n/--name` en la CLI (`-n facturas` → `facturas.csv`, `facturas.md`, `facturas.json`) y, en la GUI, un botón "Guardar con otro nombre" en el diálogo de sobrescritura, que guarda los nuevos como `report-<carpeta>-<AAAA-MM-DD>` (con `-2`, `-3`… si ya existe) y conserva los anteriores. Los reportes con esos nombres no se incluyen al volver a escanear la misma carpeta ([#50](https://github.com/dbarretol/file-reporter/issues/50)).
+
 ## [0.5.0] - 2026-11-12
 
 ### Añadido
@@ -85,6 +91,7 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
+[Sin publicar]: https://github.com/dbarretol/file-reporter/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/dbarretol/file-reporter/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/dbarretol/file-reporter/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/dbarretol/file-reporter/compare/v0.3.0...v0.4.0
