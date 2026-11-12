@@ -3,9 +3,11 @@
 //! - `mod.rs`: arranque, estado de la app, bucle por frame y paneles fijos.
 //! - `form`: formulario y botones de acción.
 //! - `run`: estado de la corrida y el hilo que escanea.
-//! - `results`: paneles de progreso y de resultado.
+//! - `results`: panel de progreso, ventana (modal) con el resultado y su
+//!   resumen en la fila de botones.
 //! - `dialogs`: diálogo de sobrescritura y arrastrar y soltar.
-//! - `widgets`, `palette`, `util`: piezas compartidas.
+//! - `palette`: colores por tema y elección de tema (`ThemeChoice`).
+//! - `widgets`, `util`: piezas compartidas.
 
 mod dialogs;
 mod form;
