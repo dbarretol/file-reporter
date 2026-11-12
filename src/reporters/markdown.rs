@@ -7,26 +7,38 @@ use std::path::Path;
 /// Escribe el árbol de directorios y, si hay archivos, una tabla con los
 /// tipos de archivo (`stats`, ya ordenada de mayor a menor tamaño).
 pub fn write_markdown(root: &Node, stats: &[ExtStat], output: &Path) -> Result<()> {
-    let mut buf = String::new();
-    buf.push_str("# 📋 Estructura de Directorios\n\n");
-    buf.push_str("```\n");
-
-    // Raíz
+    let mut tree = String::new();
     match root {
         Node::Directory { path, children, .. } => {
-            buf.push_str(&format!("{}\n", path.display()));
-            render_children(children, "", &mut buf);
+            tree.push_str(&format!("{}\n", path.display()));
+            render_children(children, "", &mut tree);
         }
         Node::File { path, .. } => {
-            buf.push_str(&format!("{}\n", path.display()));
+            tree.push_str(&format!("{}\n", path.display()));
         }
     }
 
-    buf.push_str("```\n");
+    let fence = code_fence(&tree);
+    let mut buf = String::with_capacity(tree.len() + 512);
+    buf.push_str("# 📋 Estructura de Directorios\n\n");
+    buf.push_str(&fence);
+    buf.push('\n');
+    buf.push_str(&tree);
+    buf.push_str(&fence);
+    buf.push('\n');
     render_stats(stats, &mut buf);
     fs::write(output, buf)
         .with_context(|| format!("No se pudo escribir Markdown en {}", output.display()))?;
     Ok(())
+}
+
+/// Delimitador del bloque de código del árbol: tres acentos graves o, si el
+/// contenido ya tiene una racha así (un nombre de archivo con <code>```</code>,
+/// válido en Windows y Linux), uno más que la racha más larga, para que
+/// ese nombre no cierre el bloque antes de tiempo (CommonMark).
+fn code_fence(content: &str) -> String {
+    let longest = content.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    "`".repeat(longest.max(2) + 1)
 }
 
 fn render_children(children: &[Node], prefix: &str, buf: &mut String) {
@@ -68,6 +80,35 @@ fn render_stats(stats: &[ExtStat], buf: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn code_fence_is_longer_than_any_backtick_run() {
+        assert_eq!(code_fence("a\nb\n"), "```");
+        assert_eq!(code_fence("un `nombre`\n"), "```");
+        assert_eq!(code_fence("raro```.txt\n"), "````");
+        assert_eq!(code_fence("x`````y\n"), "``````");
+    }
+
+    #[test]
+    fn backticks_in_names_do_not_close_the_tree_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        std::fs::create_dir(&input).unwrap();
+        std::fs::write(input.join("raro```.txt"), "x").unwrap();
+        let tree =
+            crate::scanner::build_tree(&input, &crate::scanner::ScanOptions::default()).unwrap();
+
+        let output = dir.path().join("report.md");
+        write_markdown(&tree, &[], &output).unwrap();
+
+        let md = std::fs::read_to_string(&output).unwrap();
+        // El bloque abre y cierra con cuatro acentos graves, y el nombre
+        // queda dentro.
+        let lines: Vec<&str> = md.lines().collect();
+        assert_eq!(lines[2], "````");
+        assert_eq!(lines[4], "└── raro```.txt");
+        assert_eq!(lines[5], "````");
+    }
 
     #[test]
     fn stats_table_lists_types_and_escapes_pipes() {

@@ -2,6 +2,18 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Cambiado
+
+- **`size_mb` en `report.csv` usa coma decimal y siempre 3 decimales** (`1,431` en vez de `1.431`). Con el separador `;`, pensado para Excel en español, el punto se leía como separador de miles y Excel mostraba 1431. Si un script leía esa columna como número con punto, puede usar `size_bytes`, que no cambia ([#42](https://github.com/dbarretol/file-reporter/issues/42)).
+
+### Corregido
+
+- **CSV:** la columna `extension` también se protege contra *formula injection*: un archivo `x.=1+1` ya no deja una fórmula en la hoja ([#41](https://github.com/dbarretol/file-reporter/issues/41), [#56](https://github.com/dbarretol/file-reporter/pull/56), gracias a @bfs2021).
+- **CSV:** sin archivos que listar (modo solo carpetas o filtro sin coincidencias), `report.csv` conserva la cabecera en vez de quedar vacío ([#43](https://github.com/dbarretol/file-reporter/issues/43)).
+- **Markdown:** un nombre con tres acentos graves seguidos ya no cierra antes de tiempo el bloque del árbol ([#44](https://github.com/dbarretol/file-reporter/issues/44)).
+
 ## [0.4.0] - 2026-11-11
 
 ### Añadido
@@ -55,6 +67,7 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
+[Sin publicar]: https://github.com/dbarretol/file-reporter/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/dbarretol/file-reporter/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dbarretol/file-reporter/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dbarretol/file-reporter/releases/tag/v0.2.0
