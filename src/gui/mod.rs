@@ -20,7 +20,7 @@ mod widgets;
 use crate::runner::ReportFormat;
 use anyhow::Result;
 use eframe::egui;
-use form::PathCheck;
+use form::{PathCheck, RecentCheck};
 use palette::{Palette, ThemeChoice};
 use run::{PendingRun, RunState};
 use serde::{Deserialize, Serialize};
@@ -119,6 +119,8 @@ struct App {
     /// Últimas carpetas escaneadas, la más reciente primero (ver
     /// `util::push_recent`).
     recent_inputs: Vec<String>,
+    /// Cuáles de `recent_inputs` siguen existiendo (ver `RecentCheck`).
+    recent_check: RecentCheck,
     /// Tema elegido en la cabecera (por defecto, el del sistema).
     theme: ThemeChoice,
     /// Reenvíos del tema a la barra de título ya hechos al arrancar y
@@ -491,6 +493,7 @@ impl eframe::App for App {
 
         self.input_check.refresh(&self.input_path, ctx);
         self.output_check.refresh(&self.output_path, ctx);
+        self.recent_check.refresh(&self.recent_inputs, ctx);
         self.sync_native_theme(ctx);
         self.expire_messages(ctx);
         self.poll_worker(ctx);
