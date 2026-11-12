@@ -7,9 +7,12 @@ use std::path::PathBuf;
 pub struct FileRecord {
     pub name: String,
     pub extension: String,
-    pub size_mb: f64,
+    /// Tamaño en MB con 3 decimales y **coma decimal** (`1,431`): el CSV usa
+    /// `;` para Excel en español, donde el punto es separador de miles y
+    /// `1.431` se leería como 1431.
+    pub size_mb: String,
     /// Tamaño exacto en bytes. `size_mb` redondea a 3 decimales y muestra
-    /// "0.000" para archivos pequeños (<524 bytes); esta columna permite
+    /// "0,000" para archivos pequeños (<524 bytes); esta columna permite
     /// ordenar y sumar tamaños con precisión sin perder esa información.
     pub size_bytes: u64,
     pub created: String,
