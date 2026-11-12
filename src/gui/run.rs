@@ -54,6 +54,10 @@ impl ActiveRun {
         self.progress.done.load(Ordering::Relaxed)
     }
 
+    pub fn dirs_scanned(&self) -> usize {
+        self.progress.dirs_scanned.load(Ordering::Relaxed)
+    }
+
     /// Qué se cuenta en esta corrida, para los textos de progreso.
     pub fn noun(&self) -> &'static str {
         runner::found_noun(self.dirs_only)

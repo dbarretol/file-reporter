@@ -2,10 +2,11 @@ use crate::models::{ExtStat, FileRecord, Node};
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Mutex;
 use tracing::{debug, info, warn};
 
 /// `true` si dos nombres o rutas designan lo mismo en el sistema de archivos.
@@ -67,6 +68,82 @@ impl Exclusions {
     }
 }
 
+/// Elementos no leídos que se guardan con su ruta y motivo para mostrarlos
+/// (ver `ScanLog`); del resto solo se lleva la cuenta.
+pub const SKIPPED_LIST_LIMIT: usize = 200;
+
+/// Carpeta o archivo que no se pudo leer y falta en el reporte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedItem {
+    pub path: PathBuf,
+    /// Motivo tal como lo da el sistema (p. ej. "Acceso denegado. (os error 5)").
+    pub reason: String,
+}
+
+/// Lo que el recorrido dejó fuera del reporte, para contárselo al usuario:
+/// lo que no pudo leer (fallos) y las carpetas omitidas por nombre (a
+/// propósito). Se comparte entre los hilos del recorrido.
+#[derive(Debug, Default)]
+pub struct ScanLog {
+    skipped_count: AtomicUsize,
+    /// Los primeros `SKIPPED_LIST_LIMIT` elementos no leídos.
+    skipped: Mutex<Vec<SkippedItem>>,
+    /// Carpetas omitidas por nombre, agrupadas por el nombre de la lista de
+    /// exclusión que coincidió.
+    excluded_dirs: Mutex<BTreeMap<String, usize>>,
+}
+
+/// Contenido final de un `ScanLog`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScanLogReport {
+    /// Total de elementos no leídos (puede superar a `skipped.len()`).
+    pub skipped_count: usize,
+    /// Hasta `SKIPPED_LIST_LIMIT` elementos no leídos, ordenados por ruta.
+    pub skipped: Vec<SkippedItem>,
+    /// `(nombre, carpetas omitidas)`, por orden alfabético del nombre.
+    pub excluded_dirs: Vec<(String, usize)>,
+}
+
+impl ScanLog {
+    fn skip(&self, path: &Path, reason: String) {
+        self.skipped_count.fetch_add(1, Ordering::Relaxed);
+        let mut list = self.skipped.lock().unwrap_or_else(|e| e.into_inner());
+        if list.len() < SKIPPED_LIST_LIMIT {
+            list.push(SkippedItem {
+                path: path.to_path_buf(),
+                reason,
+            });
+        }
+    }
+
+    fn exclude(&self, name: &str) {
+        let mut map = self.excluded_dirs.lock().unwrap_or_else(|e| e.into_inner());
+        *map.entry(name.to_string()).or_default() += 1;
+    }
+
+    pub fn skipped_count(&self) -> usize {
+        self.skipped_count.load(Ordering::Relaxed)
+    }
+
+    pub fn into_report(self) -> ScanLogReport {
+        let mut skipped = self.skipped.into_inner().unwrap_or_else(|e| e.into_inner());
+        // Los hilos terminan en cualquier orden: se ordena para que la lista
+        // sea estable y fácil de recorrer.
+        skipped.sort_by(|a, b| a.path.cmp(&b.path));
+        let excluded_dirs = self
+            .excluded_dirs
+            .into_inner()
+            .unwrap_or_else(|e| e.into_inner())
+            .into_iter()
+            .collect();
+        ScanLogReport {
+            skipped_count: self.skipped_count.into_inner(),
+            skipped,
+            excluded_dirs,
+        }
+    }
+}
+
 /// Opciones de `build_tree`. `ScanOptions::default()` recorre todo, sin
 /// filtros ni exclusiones, y sin informar de progreso.
 #[derive(Default)]
@@ -88,14 +165,19 @@ pub struct ScanOptions<'a> {
     /// carpeta, en modo solo carpetas), a medida que se procesa, para
     /// informar del progreso (GUI o indicador de la CLI).
     pub counter: Option<&'a AtomicUsize>,
+    /// Se incrementa por cada carpeta que se abre (la raíz incluida), pase
+    /// o no algo de ella al reporte: con un filtro de extensiones el
+    /// contador de `counter` puede pasar mucho tiempo quieto aunque el
+    /// recorrido avance.
+    pub dirs_counter: Option<&'a AtomicUsize>,
     /// Si pasa a `true`, el recorrido se aborta con error en vez de seguir
     /// leyendo disco (cancelación pedida por el usuario).
     pub cancel: Option<&'a AtomicBool>,
-    /// Se incrementa por cada carpeta o archivo que no se pudo leer
-    /// (permisos, entrada corrupta, etc.), para avisar de que el reporte
-    /// quedó incompleto. No cuenta los symlinks, las exclusiones ni la
-    /// cancelación, que son omisiones intencionales.
-    pub skipped: Option<&'a AtomicUsize>,
+    /// Registra cada carpeta o archivo que no se pudo leer (permisos,
+    /// entrada corrupta, etc.), para avisar de que el reporte quedó
+    /// incompleto, y las carpetas omitidas por nombre. Los symlinks, las
+    /// rutas excluidas y la cancelación no se registran.
+    pub log: Option<&'a ScanLog>,
 }
 
 /// Parámetros del recorrido, iguales para toda la recursión.
@@ -103,10 +185,11 @@ struct Scan<'a> {
     filters: &'a [String],
     dirs_only: bool,
     counter: Option<&'a AtomicUsize>,
+    dirs_counter: Option<&'a AtomicUsize>,
     exclusions: Exclusions,
     excluded_dir_names: &'a [String],
     cancel: Option<&'a AtomicBool>,
-    skipped: Option<&'a AtomicUsize>,
+    log: Option<&'a ScanLog>,
 }
 
 impl Scan<'_> {
@@ -124,14 +207,24 @@ impl Scan<'_> {
         self.filters.is_empty() || self.filters.iter().any(|f| f == extension)
     }
 
-    fn is_excluded_dir(&self, name: &str) -> bool {
-        self.excluded_dir_names.iter().any(|n| same_name(name, n))
+    /// Nombre de la lista de exclusión que coincide con `name`, si hay alguno.
+    fn excluded_by(&self, name: &str) -> Option<&str> {
+        self.excluded_dir_names
+            .iter()
+            .find(|n| same_name(name, n))
+            .map(String::as_str)
+    }
+
+    fn skip(&self, path: &Path, reason: String) {
+        if let Some(log) = self.log {
+            log.skip(path, reason);
+        }
     }
 }
 
 /// Construye recursivamente el árbol jerárquico (ver `ScanOptions`).
 /// Los errores de lectura (permisos, etc.) se ignoran por archivo/carpeta
-/// para que el escaneo sea robusto, y se cuentan en `skipped`.
+/// para que el escaneo sea robusto, y se registran en `log`.
 ///
 /// Rendimiento: el tipo de cada entrada y los metadatos de los archivos salen
 /// de la propia lectura del directorio (`DirEntry::file_type`/`metadata`),
@@ -155,10 +248,11 @@ pub fn build_tree(path: &Path, opts: &ScanOptions<'_>) -> Result<Node> {
         filters: opts.extensions,
         dirs_only: opts.dirs_only,
         counter: opts.counter,
+        dirs_counter: opts.dirs_counter,
         exclusions: Exclusions::new(opts.excluded_paths),
         excluded_dir_names: opts.excluded_dir_names,
         cancel: opts.cancel,
-        skipped: opts.skipped,
+        log: opts.log,
     };
     if scan.cancelled() {
         bail!("Escaneo cancelado");
@@ -224,6 +318,7 @@ fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
     if scan.dirs_only && !is_root {
         Scan::bump(scan.counter);
     }
+    Scan::bump(scan.dirs_counter);
 
     let mut subdirs: Vec<PathBuf> = Vec::new();
     let mut children: Vec<Node> = Vec::new();
@@ -235,7 +330,7 @@ fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
                     Ok(entry) => entry,
                     Err(e) => {
                         warn!("Entrada ilegible en {}: {e}", path.display());
-                        Scan::bump(scan.skipped);
+                        scan.skip(path, format!("Entrada ilegible: {e}"));
                         continue;
                     }
                 };
@@ -252,7 +347,7 @@ fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
                     Ok(t) => t,
                     Err(e) => {
                         warn!("Sin acceso a {}: {e}", entry_path.display());
-                        Scan::bump(scan.skipped);
+                        scan.skip(&entry_path, e.to_string());
                         continue;
                     }
                 };
@@ -266,8 +361,11 @@ fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
                 if file_type.is_dir() {
                     // Excluida por nombre (`.git`, `node_modules`…): ni se
                     // abre. Omisión intencional, no cuenta como error.
-                    if scan.is_excluded_dir(&name) {
+                    if let Some(rule) = scan.excluded_by(&name) {
                         info!("Carpeta omitida por nombre: {}", entry_path.display());
+                        if let Some(log) = scan.log {
+                            log.exclude(rule);
+                        }
                     } else {
                         subdirs.push(entry_path);
                     }
@@ -286,7 +384,7 @@ fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
                     }
                     Err(e) => {
                         warn!("Sin acceso a {}: {e}", entry_path.display());
-                        Scan::bump(scan.skipped);
+                        scan.skip(&entry_path, e.to_string());
                     }
                 }
             }
@@ -295,7 +393,7 @@ fn scan_dir(scan: &Scan<'_>, path: &Path, is_root: bool) -> Result<Node> {
             // Sin permisos -> no podemos listar el contenido; queda como
             // carpeta vacía en el árbol, pero contamos la pérdida.
             warn!("No se pudo leer la carpeta {}: {e}", path.display());
-            Scan::bump(scan.skipped);
+            scan.skip(path, format!("No se pudo abrir la carpeta: {e}"));
         }
     }
 
@@ -593,6 +691,52 @@ mod tests {
     }
 
     #[test]
+    fn build_tree_dirs_counter_counts_every_opened_folder() {
+        // Con un filtro sin coincidencias el contador de archivos no se
+        // mueve, pero el de carpetas sí (raíz incluida).
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("a").join("b")).unwrap();
+        fs::create_dir(dir.path().join("c")).unwrap();
+        fs::write(dir.path().join("a").join("x.txt"), "x").unwrap();
+
+        let (files, dirs) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let filters = vec!["pdf".to_string()];
+        build_tree(
+            dir.path(),
+            &ScanOptions {
+                extensions: &filters,
+                counter: Some(&files),
+                dirs_counter: Some(&dirs),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(files.load(Ordering::Relaxed), 0);
+        assert_eq!(dirs.load(Ordering::Relaxed), 4);
+    }
+
+    #[test]
+    fn scan_log_keeps_a_bounded_sorted_list_and_the_full_count() {
+        let log = ScanLog::default();
+        for i in (0..SKIPPED_LIST_LIMIT + 5).rev() {
+            log.skip(Path::new(&format!("f{i:04}")), "sin acceso".to_string());
+        }
+        log.exclude("build");
+        log.exclude("build");
+        log.exclude(".git");
+        assert_eq!(log.skipped_count(), SKIPPED_LIST_LIMIT + 5);
+
+        let report = log.into_report();
+        assert_eq!(report.skipped_count, SKIPPED_LIST_LIMIT + 5);
+        assert_eq!(report.skipped.len(), SKIPPED_LIST_LIMIT);
+        assert!(report.skipped.windows(2).all(|w| w[0].path < w[1].path));
+        assert_eq!(
+            report.excluded_dirs,
+            vec![(".git".to_string(), 1), ("build".to_string(), 2)]
+        );
+    }
+
+    #[test]
     fn build_tree_excludes_exact_paths_not_every_entry_with_that_name() {
         // Se excluye `report.csv` de la raíz (el reporte propio), pero no un
         // `report.csv` de otra carpeta: el atajo por nombre no debe bastar.
@@ -785,12 +929,12 @@ mod tests {
         fs::write(root.join("node_modules"), "x").unwrap();
 
         let names = vec![".git".to_string(), "node_modules".to_string()];
-        let skipped = AtomicUsize::new(0);
+        let log = ScanLog::default();
         let tree = build_tree(
             root,
             &ScanOptions {
                 excluded_dir_names: &names,
-                skipped: Some(&skipped),
+                log: Some(&log),
                 ..Default::default()
             },
         )
@@ -804,8 +948,13 @@ mod tests {
         assert!(paths.iter().any(|p| p.ends_with("app.js")));
         assert!(paths.iter().any(|p| p.ends_with("node_modules")));
         assert_eq!(count_dirs(&tree), 1, "solo queda `web`");
-        // Omitir a propósito no es un fallo de lectura.
-        assert_eq!(skipped.load(Ordering::Relaxed), 0);
+        // Omitir a propósito no es un fallo de lectura, pero queda registrado.
+        let report = log.into_report();
+        assert_eq!(report.skipped_count, 0);
+        assert_eq!(
+            report.excluded_dirs,
+            vec![(".git".to_string(), 1), ("node_modules".to_string(), 1)]
+        );
     }
 
     #[test]

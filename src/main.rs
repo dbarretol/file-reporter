@@ -100,16 +100,16 @@ fn main() -> Result<()> {
             }
         }
     }
+    if let Some(text) = runner::excluded_dirs_text(&summary.excluded_dirs) {
+        println!("🚫 {text}");
+    }
     if summary.skipped_count > 0 {
         let hint = if parsed.verbose == 0 {
             " (usa -v para ver cuáles)"
         } else {
             ""
         };
-        println!(
-            "⚠️  {} elementos no accesibles fueron omitidos{hint}",
-            summary.skipped_count
-        );
+        println!("⚠️  {}{hint}", runner::skipped_text(summary.skipped_count));
     }
     println!("⏱️  Tiempo: {:.2?}", start.elapsed());
 
