@@ -2,6 +2,24 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [0.5.0] - 2026-11-12
+
+### Añadido
+
+- **Carpetas omitidas por nombre en el resultado:** la ventana de resultado y la salida de la CLI dicen cuántas carpetas se omitieron por nombre y cuáles, p. ej. "3 carpetas omitidas por nombre (.git, build ×2)". Antes una carpeta `build` o `dist` con contenido propio podía quedar fuera del reporte sin aviso ([#47](https://github.com/dbarretol/file-reporter/issues/47)).
+- **GUI: lista de elementos no accesibles:** el aviso "N elementos no accesibles fueron omitidos" se despliega para ver cuáles (hasta 200) y el motivo de cada uno, con un botón "Copiar lista" ([#48](https://github.com/dbarretol/file-reporter/issues/48)).
+- **Progreso con las carpetas revisadas:** el contador de la GUI y de la CLI muestra, además de los archivos encontrados, las carpetas revisadas. Con un filtro de extensiones el escaneo ya no parece colgado mientras no aparecen coincidencias. En la GUI el contador también se ve en la barra de estado ([#49](https://github.com/dbarretol/file-reporter/issues/49)).
+- **GUI: carpetas recientes:** un botón 🕘 junto a "Carpeta a escanear" ofrece las últimas 5 carpetas escaneadas, que se recuerdan entre sesiones. Las que ya no existen no se muestran ([#52](https://github.com/dbarretol/file-reporter/issues/52)).
+
+### Cambiado
+
+- **Errores de la CLI en una línea:** `❌ <error>: <causa>`, en vez del formato de depuración (`Error: …` y `Caused by:`). El código de salida sigue siendo 1. Las extensiones y carpetas omitidas del encabezado se muestran como lista (`pdf, docx`) en lugar de `["pdf", "docx"]` ([#55](https://github.com/dbarretol/file-reporter/issues/55)).
+
+### Corregido
+
+- **Escritura segura de los reportes:** cada reporte se escribe primero en un temporal (`report.csv.tmp`…) que solo reemplaza al anterior si todo fue bien. Antes, un fallo a mitad de la escritura (disco lleno, `report.csv` abierto en Excel…) dejaba el reporte anterior vacío o a medias, incluso después de confirmar "Sobrescribir". Si el reporte está abierto en otro programa, el error ahora lo sugiere ([#45](https://github.com/dbarretol/file-reporter/issues/45)).
+- **GUI: "Abrir carpeta de salida" con comas en la ruta:** con una carpeta como `docs,v2`, el Explorador abría otra ubicación (Documentos). Ahora abre la carpeta correcta con el reporte resaltado ([#46](https://github.com/dbarretol/file-reporter/issues/46)).
+
 ## [0.4.1] - 2026-11-12
 
 ### Cambiado
@@ -67,6 +85,7 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
+[0.5.0]: https://github.com/dbarretol/file-reporter/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/dbarretol/file-reporter/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/dbarretol/file-reporter/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dbarretol/file-reporter/compare/v0.2.0...v0.3.0

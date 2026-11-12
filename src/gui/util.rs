@@ -72,10 +72,21 @@ pub(super) fn open_in_explorer(path: &Path) -> std::io::Result<()> {
 /// (en vez de una carpeta "en blanco" sin selección).
 #[cfg(target_os = "windows")]
 pub(super) fn open_selecting(path: &Path) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    // El Explorador separa sus argumentos por comas: sin comillas, una ruta
+    // como `D:\docs,v2\report.csv` abre otra carpeta (la de Documentos). Va
+    // con `raw_arg` para que Rust no vuelva a escapar las comillas; una ruta
+    // de Windows no puede contener `"`.
     std::process::Command::new("explorer")
-        .arg(format!("/select,{}", path.display()))
+        .raw_arg(select_arg(path))
         .spawn()
         .map(|_| ())
+}
+
+/// Argumento `/select,"<ruta>"` del Explorador de Windows.
+#[cfg(any(target_os = "windows", test))]
+fn select_arg(path: &Path) -> String {
+    format!("/select,\"{}\"", path.display())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -88,9 +99,66 @@ pub(super) fn open_selecting(path: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Carpetas recientes que se recuerdan.
+pub(super) const MAX_RECENT: usize = 5;
+
+/// Pone `path` al principio de la lista de recientes, sin repetirla (una
+/// misma carpeta escrita con otra barra final o, en Windows y macOS, con
+/// otras mayúsculas cuenta como la misma) y sin pasar de `MAX_RECENT`.
+pub(super) fn push_recent(list: &mut Vec<String>, path: &str) {
+    let path = path.trim_end_matches(['/', '\\']);
+    if path.is_empty() {
+        return;
+    }
+    let key = recent_key(path);
+    list.retain(|p| recent_key(p) != key);
+    list.insert(0, path.to_string());
+    list.truncate(MAX_RECENT);
+}
+
+fn recent_key(path: &str) -> String {
+    let path = path.trim_end_matches(['/', '\\']);
+    if cfg!(any(windows, target_os = "macos")) {
+        path.to_lowercase()
+    } else {
+        path.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn push_recent_moves_repeats_to_the_front_and_keeps_five() {
+        let mut list = Vec::new();
+        for p in ["a", "b", "c", "d", "e", "f"] {
+            push_recent(&mut list, p);
+        }
+        assert_eq!(list, vec!["f", "e", "d", "c", "b"]);
+
+        push_recent(&mut list, "c/");
+        assert_eq!(list, vec!["c", "f", "e", "d", "b"]);
+
+        push_recent(&mut list, "");
+        assert_eq!(list.len(), MAX_RECENT);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn push_recent_ignores_case_on_windows() {
+        let mut list = vec![r"C:\Datos".to_string()];
+        push_recent(&mut list, r"c:\datos\");
+        assert_eq!(list, vec![r"c:\datos"]);
+    }
+
+    #[test]
+    fn select_arg_quotes_paths_with_commas_and_spaces() {
+        assert_eq!(
+            select_arg(Path::new(r"D:\docs,v2\mi reporte\report.csv")),
+            r#"/select,"D:\docs,v2\mi reporte\report.csv""#
+        );
+    }
 
     #[test]
     fn truncate_path_display_noop_when_short_enough() {

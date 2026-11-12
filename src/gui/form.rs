@@ -86,6 +86,7 @@ impl App {
                     &mut self.input_path,
                     enabled,
                     "Selecciona la carpeta…",
+                    &self.recent_inputs,
                     || rfd::FileDialog::new().pick_folder(),
                 );
                 match self.input_check.status() {
@@ -105,6 +106,7 @@ impl App {
                     &mut self.output_path,
                     enabled,
                     "Por defecto: misma que la entrada",
+                    &[],
                     || rfd::FileDialog::new().pick_folder(),
                 );
                 // Dónde acabarán los reportes, para que el valor por defecto

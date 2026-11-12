@@ -5,9 +5,10 @@ use super::palette::Palette;
 use super::run::RunState;
 use super::util::{fmt_seconds, open_in_explorer, open_selecting};
 use super::widgets::{panel_title, result_row, RowAction};
-use super::App;
+use super::{App, Copied};
 use crate::models::ExtStat;
-use crate::runner;
+use crate::runner::RunSummary;
+use crate::summary;
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -22,7 +23,6 @@ impl App {
         };
         let palette = Palette::of(ui);
         let done = run.found();
-        let noun = run.noun();
 
         egui::Frame::group(ui.style())
             .inner_margin(egui::Margin::same(12))
@@ -33,9 +33,10 @@ impl App {
                     // recorrer el disco dos veces. Se muestra un contador en
                     // vivo y el tiempo transcurrido.
                     let text = if run.writing() {
-                        format!("Generando reportes… ({done} {noun})")
+                        format!("Generando reportes… ({done} {})", run.noun())
                     } else {
-                        format!("Escaneando… {done} {noun}")
+                        let status = summary::scan_status(done, run.dirs_scanned(), run.dirs_only);
+                        format!("Escaneando… {status}")
                     };
                     ui.label(egui::RichText::new(text).size(13.0));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -70,7 +71,7 @@ impl App {
                     format!(
                         "{} archivos · {}",
                         s.files_count,
-                        runner::format_size(s.total_bytes)
+                        summary::format_size(s.total_bytes)
                     )
                 };
                 (palette.success, "✅", text)
@@ -114,7 +115,7 @@ impl App {
         if !self.results_visible() {
             return;
         }
-        let mut action: Option<(RowAction, PathBuf)> = None;
+        let mut action: Option<ResultAction> = None;
         let mut open_folder: Option<PathBuf> = None;
         let mut close = false;
 
@@ -152,12 +153,19 @@ impl App {
         }
 
         let open_result = match (action, open_folder) {
-            (Some((RowAction::Copy, path)), _) => {
+            (Some(ResultAction::Row(RowAction::Copy, path)), _) => {
                 ctx.copy_text(path.display().to_string());
-                self.copied = Some((path, Instant::now()));
+                self.copied = Some((Copied::Path(path), Instant::now()));
                 None
             }
-            (Some((RowAction::Open, path)), _) => Some(
+            (Some(ResultAction::CopySkipped), _) => {
+                if let RunState::Done { summary, .. } = &self.state {
+                    ctx.copy_text(skipped_list_text(summary));
+                    self.copied = Some((Copied::SkippedList, Instant::now()));
+                }
+                None
+            }
+            (Some(ResultAction::Row(RowAction::Open, path)), _) => Some(
                 open_in_explorer(&path).map_err(|e| format!("No se pudo abrir el archivo: {e}")),
             ),
             // /select, abre el Explorador en la carpeta contenedora con el
@@ -177,9 +185,9 @@ impl App {
         }
     }
 
-    /// Contenido del modal según el resultado. Las acciones de las filas de
-    /// reportes se devuelven en `action` para aplicarlas fuera del modal.
-    fn render_result_body(&self, ui: &mut egui::Ui, action: &mut Option<(RowAction, PathBuf)>) {
+    /// Contenido del modal según el resultado. Las acciones de los botones
+    /// se devuelven en `action` para aplicarlas fuera del modal.
+    fn render_result_body(&self, ui: &mut egui::Ui, action: &mut Option<ResultAction>) {
         let palette = Palette::of(ui);
         match &self.state {
             RunState::Done {
@@ -187,7 +195,7 @@ impl App {
                 elapsed,
             } => {
                 let elapsed = fmt_seconds(elapsed.as_secs_f32());
-                let copied = self.copied.as_ref().map(|(p, _)| p);
+                let copied = self.copied.as_ref().map(|(c, _)| c);
                 panel_title(
                     ui,
                     palette.success,
@@ -201,24 +209,28 @@ impl App {
                     format!(
                         "📊 {} archivos · {} · ⏱ {elapsed}",
                         s.files_count,
-                        runner::format_size(s.total_bytes)
+                        summary::format_size(s.total_bytes)
                     )
                 };
                 ui.label(counts);
+                // Lo que falta en el reporte, a propósito (carpetas omitidas
+                // por nombre) o no (sin acceso), para que nadie lo dé por
+                // completo sin saberlo.
+                if let Some(text) = summary::excluded_dirs_text(&s.excluded_dirs) {
+                    ui.label(egui::RichText::new(format!("🚫 {text}")).color(palette.muted))
+                        .on_hover_text("Se configuran en «Carpetas a omitir».");
+                }
                 if s.skipped_count > 0 {
-                    ui.colored_label(
-                        palette.warning,
-                        format!(
-                            "⚠ {} elementos no accesibles fueron omitidos",
-                            s.skipped_count
-                        ),
-                    );
+                    let list_copied = copied == Some(&Copied::SkippedList);
+                    if render_skipped(ui, &palette, s, list_copied) {
+                        *action = Some(ResultAction::CopySkipped);
+                    }
                 }
                 ui.add_space(8.0);
                 for (format, path) in &s.reports {
-                    let is_copied = copied == Some(path);
+                    let is_copied = copied == Some(&Copied::Path(path.clone()));
                     if let Some(a) = result_row(ui, format.label(), path, is_copied) {
-                        *action = Some((a, path.clone()));
+                        *action = Some(ResultAction::Row(a, path.clone()));
                     }
                 }
                 if !s.ext_stats.is_empty() {
@@ -244,7 +256,7 @@ impl App {
             } => {
                 // Neutral, no rojo: cancelar no es un error del programa,
                 // es una acción deliberada del usuario.
-                let noun = crate::runner::found_noun(*dirs_only);
+                let noun = summary::found_noun(*dirs_only);
                 let elapsed = fmt_seconds(elapsed.as_secs_f32());
                 panel_title(ui, palette.warning, "⏹", "Escaneo cancelado");
                 ui.add_space(4.0);
@@ -260,6 +272,79 @@ impl App {
             RunState::Idle | RunState::Running(_) => {}
         }
     }
+}
+
+/// Acción pedida desde el modal de resultado, aplicada fuera de él.
+enum ResultAction {
+    /// Botón de la fila de un reporte.
+    Row(RowAction, PathBuf),
+    /// "Copiar lista" de los elementos no accesibles.
+    CopySkipped,
+}
+
+/// Aviso plegable de los elementos que no se pudieron leer: la lista (hasta
+/// `scanner::SKIPPED_LIST_LIMIT`) con el motivo de cada uno y un botón para
+/// copiarla. Devuelve `true` si se pulsó "Copiar lista".
+fn render_skipped(ui: &mut egui::Ui, palette: &Palette, s: &RunSummary, copied: bool) -> bool {
+    let title = egui::RichText::new(format!("⚠ {}", summary::skipped_text(s.skipped_count)))
+        .color(palette.warning);
+    let mut copy = false;
+    egui::CollapsingHeader::new(title)
+        .id_salt("skipped_items")
+        .default_open(false)
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("skipped_scroll")
+                .max_height(160.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    for item in &s.skipped {
+                        let path = item.path.display().to_string();
+                        ui.label(egui::RichText::new(&path).monospace().size(11.0));
+                        ui.label(
+                            egui::RichText::new(format!("   {}", item.reason))
+                                .color(palette.muted)
+                                .size(11.0),
+                        );
+                    }
+                });
+            let rest = s.skipped_count.saturating_sub(s.skipped.len());
+            if rest > 0 {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "… y {rest} más. La CLI con -v los muestra todos."
+                    ))
+                    .color(palette.muted)
+                    .size(11.0),
+                );
+            }
+            let label = if copied {
+                "✔ Copiada"
+            } else {
+                "Copiar lista"
+            };
+            copy = ui
+                .small_button(label)
+                .on_hover_text("Copiar las rutas y los motivos al portapapeles")
+                .clicked();
+        });
+    copy
+}
+
+/// Texto de "Copiar lista": una línea por elemento, `ruta<TAB>motivo` (se
+/// pega en una hoja de cálculo como dos columnas), y una línea final si la
+/// lista se cortó.
+fn skipped_list_text(s: &RunSummary) -> String {
+    let mut text: String = s
+        .skipped
+        .iter()
+        .map(|i| format!("{}\t{}\n", i.path.display(), i.reason))
+        .collect();
+    let rest = s.skipped_count.saturating_sub(s.skipped.len());
+    if rest > 0 {
+        text.push_str(&format!("… y {rest} más\n"));
+    }
+    text
 }
 
 /// Tipos de archivo mostrados en el modal de resultado; el resto se agrupa
@@ -279,7 +364,7 @@ fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], to
                 // para botones) y la tabla queda demasiado espaciada.
                 .min_row_height(18.0)
                 .show(ui, |ui| {
-                    for row in runner::top_types(stats, TOP_TYPES) {
+                    for row in summary::top_types(stats, TOP_TYPES) {
                         // Números en monoespaciada con relleno para que queden
                         // alineados a la derecha (un `Layout::right_to_left`
                         // dentro del Grid estira la fila en alto).
@@ -288,7 +373,7 @@ fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], to
                             egui::RichText::new(format!("{:>7} arch.", row.count)).monospace(),
                         );
                         ui.label(
-                            egui::RichText::new(format!("{:>9}", runner::format_size(row.bytes)))
+                            egui::RichText::new(format!("{:>9}", summary::format_size(row.bytes)))
                                 .monospace(),
                         );
                         ui.horizontal(|ui| {
@@ -299,7 +384,7 @@ fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], to
                             };
                             share_bar(ui, palette, fraction);
                             ui.label(
-                                egui::RichText::new(runner::format_percent(row.bytes, total))
+                                egui::RichText::new(summary::format_percent(row.bytes, total))
                                     .color(palette.muted)
                                     .size(12.0),
                             );
@@ -333,5 +418,41 @@ fn share_bar(ui: &mut egui::Ui, palette: &Palette, fraction: f32) {
     if width > 0.0 {
         let filled = egui::Rect::from_min_size(rect.min, egui::vec2(width, rect.height()));
         painter.rect_filled(filled, radius, palette.accent);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scanner::SkippedItem;
+
+    fn summary(skipped: Vec<SkippedItem>, skipped_count: usize) -> RunSummary {
+        RunSummary {
+            reports: vec![],
+            files_count: 0,
+            total_bytes: 0,
+            dirs_count: 0,
+            dirs_only: false,
+            skipped_count,
+            skipped,
+            excluded_dirs: vec![],
+            ext_stats: vec![],
+        }
+    }
+
+    #[test]
+    fn skipped_list_text_is_one_tab_separated_line_per_item() {
+        let item = |p: &str| SkippedItem {
+            path: PathBuf::from(p),
+            reason: "Acceso denegado. (os error 5)".to_string(),
+        };
+        let s = summary(vec![item("a"), item("b")], 2);
+        assert_eq!(
+            skipped_list_text(&s),
+            "a\tAcceso denegado. (os error 5)\nb\tAcceso denegado. (os error 5)\n"
+        );
+        // Si la lista se cortó, se indica cuántos faltan.
+        let s = summary(vec![item("a")], 5);
+        assert!(skipped_list_text(&s).ends_with("… y 4 más\n"));
     }
 }

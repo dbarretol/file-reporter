@@ -71,24 +71,26 @@ C:\Demo\Proyecto
 - 🎯 **Filtro por extensiones** (`pdf, docx, jpg…`).
 - 📂 **Modo solo carpetas:** genera únicamente la jerarquía de directorios, sin archivos.
 - 🗂️ **Resumen por tipo de archivo:** cantidad, tamaño y porcentaje de cada extensión, en la GUI, en la consola y en `report.md`.
-- 🚫 **Omite carpetas por nombre** en cualquier nivel (`.git`, `node_modules`, `target`…), sin llegar a leerlas.
+- 🚫 **Omite carpetas por nombre** en cualquier nivel (`.git`, `node_modules`, `target`…), sin llegar a leerlas, y al terminar indica cuántas omitió y cuáles.
 
 **Rendimiento y robustez**
 - 🚀 Escaneo **paralelo** con [`rayon`](https://crates.io/crates/rayon), en una sola pasada por el disco.
 - 🛡️ Sigue funcionando ante carpetas sin permisos y avisa cuántos elementos se omitieron (con `-v`, cuáles y por qué).
 - 🔁 Detecta symlinks y junctions cíclicos para no quedarse colgado.
 - 🔒 CSV protegido contra *formula injection*.
+- 💾 Escritura segura: si algo falla al guardar un reporte (disco lleno, archivo abierto en Excel…), el anterior queda intacto.
 
 **Línea de comandos**
-- ⏳ Contador de archivos encontrados y tiempo transcurrido mientras escanea (se oculta si la salida se redirige).
+- ⏳ Contador de archivos encontrados, carpetas revisadas y tiempo transcurrido mientras escanea (se oculta si la salida se redirige).
 - 🔎 `-v/--verbose`: lista lo omitido y el motivo (sin acceso, enlaces no seguidos, carpetas excluidas).
 - 🧩 Todas las opciones de la GUI (filtros, exclusiones, formatos, solo carpetas), listas para scripts.
 
 **Interfaz gráfica**
-- 🖱️ Arrastra y suelta una carpeta sobre la ventana, o usa "Examinar…".
+- 🖱️ Arrastra y suelta una carpeta sobre la ventana, usa "Examinar…" o elige una de las 5 últimas con 🕘.
 - ✅ Valida las rutas mientras escribes e indica dónde se guardarán los reportes.
-- 📈 Contador en vivo y tiempo transcurrido; **cancela** en cualquier momento con el botón o con Esc.
+- 📈 Contador en vivo de archivos encontrados y carpetas revisadas, y tiempo transcurrido; **cancela** en cualquier momento con el botón o con Esc.
 - 📊 Resultado en una ventana propia: archivos, tamaño total, tiempo y tipos de archivo; abre o copia la ruta de cada reporte.
+- 🧾 Dice qué quedó fuera: las carpetas omitidas por nombre y, en una lista desplegable que se puede copiar, los elementos sin acceso con su motivo.
 - 🔔 Si la ventana está en segundo plano, parpadea en la barra de tareas al terminar.
 - ⚠️ Pide confirmación antes de sobrescribir reportes anteriores.
 - ♻️ Recuerda rutas, opciones y tema entre sesiones.
@@ -199,7 +201,7 @@ En Windows (PowerShell):
 | `-v`, `--verbose` | Muestra qué se omitió y por qué: carpetas y archivos sin acceso, enlaces no seguidos y carpetas excluidas por nombre. `-vv` añade el detalle interno del proceso |
 | `-h`, `--help` / `-V`, `--version` | Ayuda / versión |
 
-Mientras escanea, la terminal muestra cuántos archivos (o carpetas) lleva encontrados y el tiempo transcurrido; después indica que está escribiendo los reportes. Al terminar, el indicador desaparece y queda el resumen. Si la salida se redirige a un archivo, o con `-v`, no se muestra.
+Mientras escanea, la terminal muestra cuántos archivos lleva encontrados y cuántas carpetas ha revisado (en modo solo carpetas, cuántas carpetas lleva encontradas), y el tiempo transcurrido; después indica que está escribiendo los reportes. Al terminar, el indicador desaparece y queda el resumen. Si la salida se redirige a un archivo, o con `-v`, no se muestra.
 
 > **Sobre las extensiones:** se usa lo que va tras el **último** punto del nombre. `foo.tar.gz` tiene extensión `gz`, no `tar.gz`. Los archivos sin punto (`LICENSE`, `Makefile`) no tienen extensión y quedan fuera de cualquier filtro.
 
@@ -327,7 +329,7 @@ CLI y GUI comparten exactamente la misma lógica; solo cambia la forma de recibi
 build.rs             # Windows: incrusta el icono y la versión en el .exe
 src/
 ├── main.rs          # Punto de entrada: decide entre CLI y GUI
-├── cli.rs           # Argumentos de línea de comandos (clap) e indicador de progreso
+├── cli.rs           # Modo CLI: argumentos (clap), indicador de progreso y resumen final
 ├── gui/             # Interfaz gráfica (egui/eframe)
 │   ├── mod.rs       # Arranque, estado de la app y paneles fijos
 │   ├── form.rs      # Formulario y botones
@@ -337,9 +339,10 @@ src/
 │   └── …            # widgets, paleta de colores, utilidades
 ├── icon.rs          # Icono de la app, dibujado por código (sin imágenes)
 ├── runner.rs        # Flujo común: escanear → escribir reportes
+├── summary.rs       # Textos del resumen que comparten CLI y GUI (tamaños, tipos, avisos)
 ├── scanner.rs       # Recorrido paralelo del directorio
 ├── models.rs        # Node (árbol), FileRecord (fila del CSV) y ExtStat (tipos)
-└── reporters/
+└── reporters/      # Un módulo por formato; escritura segura a través de un temporal
     ├── csv.rs       # CSV para Excel (BOM + ;)
     ├── markdown.rs  # Árbol estilo tree y tabla de tipos
     └── json.rs      # JSON con formato legible
@@ -378,7 +381,7 @@ src/
 ## 🧪 Desarrollo
 
 ```bash
-cargo test                          # tests
+cargo test                          # tests (unitarios y de la CLI como programa, en tests/cli.rs)
 cargo fmt --check                   # formato
 cargo clippy --all-targets -- -D warnings   # lint
 cargo run --profile fast            # probar la app: recompila en segundos (sin LTO)

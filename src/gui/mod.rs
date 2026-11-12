@@ -24,6 +24,7 @@ use form::PathCheck;
 use palette::{Palette, ThemeChoice};
 use run::{PendingRun, RunState};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -115,6 +116,9 @@ struct App {
     dirs_only: bool,
     /// Casillas CSV / Markdown / JSON, en el orden de `ReportFormat::ALL`.
     formats: [bool; 3],
+    /// Últimas carpetas escaneadas, la más reciente primero (ver
+    /// `util::push_recent`).
+    recent_inputs: Vec<String>,
     /// Tema elegido en la cabecera (por defecto, el del sistema).
     theme: ThemeChoice,
     /// Reenvíos del tema a la barra de título ya hechos al arrancar y
@@ -144,9 +148,19 @@ struct App {
     /// línea con un botón para volver a abrirlo.
     results_open: bool,
 
-    /// Última ruta copiada con "Copiar ruta" y cuándo, para confirmar la
-    /// copia en el botón durante `COPIED_TTL`.
-    copied: Option<(PathBuf, Instant)>,
+    /// Lo último copiado desde el resultado ("Copiar ruta" o "Copiar
+    /// lista") y cuándo, para confirmar la copia en el botón durante
+    /// `COPIED_TTL`.
+    copied: Option<(Copied, Instant)>,
+}
+
+/// Qué se copió desde el modal de resultado.
+#[derive(PartialEq)]
+enum Copied {
+    /// La ruta de un reporte.
+    Path(PathBuf),
+    /// La lista de elementos no accesibles.
+    SkippedList,
 }
 
 /// Único subconjunto de `App` que se persiste entre sesiones (`eframe`
@@ -170,6 +184,9 @@ struct PersistedState {
     /// Tema elegido; los estados guardados antes de existir el selector
     /// siguen el del sistema.
     theme: ThemeChoice,
+    /// Últimas carpetas escaneadas (vacío en estados de versiones
+    /// anteriores).
+    recent_inputs: Vec<String>,
 }
 
 impl Default for PersistedState {
@@ -182,6 +199,7 @@ impl Default for PersistedState {
             dirs_only: false,
             formats: ALL_FORMATS,
             theme: ThemeChoice::System,
+            recent_inputs: Vec::new(),
         }
     }
 }
@@ -201,6 +219,7 @@ impl App {
             dirs_only: state.dirs_only,
             formats: state.formats,
             theme: state.theme,
+            recent_inputs: state.recent_inputs,
             ..App::default()
         }
     }
@@ -360,26 +379,41 @@ impl App {
                     ui.add_space(12.0);
                     // Un error de una acción puntual (p. ej. "Abrir carpeta"
                     // falló) tiene prioridad sobre el estado general.
-                    let (icon, text, color) = if let Some((err, _)) = &self.ui_error {
-                        ("⚠", err.as_str(), palette.error)
+                    let (icon, text, color): (&str, Cow<str>, _) = if let Some((err, _)) =
+                        &self.ui_error
+                    {
+                        ("⚠", err.into(), palette.error)
                     } else {
                         // ⚪/⚫ y no 🟢 & co.: la fuente de emoji de egui es
-                        // monocroma y no trae todos los círculos de color (🟢
-                        // salía como un cuadro). El color lo da la etiqueta.
+                        // monocroma y no trae todos los círculos de color
+                        // (🟢 salía como un cuadro). El color lo da la
+                        // etiqueta.
                         match &self.state {
-                            RunState::Idle => ("⚪", "Listo", palette.muted),
+                            RunState::Idle => ("⚪", "Listo".into(), palette.muted),
                             // La fase real, no un genérico "Procesando…".
                             RunState::Running(run) if run.writing() => {
-                                ("⚫", "Generando reportes…", palette.accent)
+                                ("⚫", "Generando reportes…".into(), palette.accent)
                             }
-                            RunState::Running(_) => ("⚫", "Escaneando…", palette.accent),
-                            RunState::Done { .. } => ("⚫", "Completado", palette.success),
-                            RunState::Failed { .. } => ("⚫", "Error", palette.error),
-                            RunState::Cancelled { .. } => ("⏹", "Cancelado", palette.warning),
+                            // Con los contadores: el panel de progreso
+                            // puede quedar fuera de la vista en ventanas
+                            // bajas, la barra de estado siempre se ve.
+                            RunState::Running(run) => {
+                                let status = crate::summary::scan_status(
+                                    run.found(),
+                                    run.dirs_scanned(),
+                                    run.dirs_only,
+                                );
+                                ("⚫", format!("Escaneando… {status}").into(), palette.accent)
+                            }
+                            RunState::Done { .. } => ("⚫", "Completado".into(), palette.success),
+                            RunState::Failed { .. } => ("⚫", "Error".into(), palette.error),
+                            RunState::Cancelled { .. } => {
+                                ("⏹", "Cancelado".into(), palette.warning)
+                            }
                         }
                     };
                     ui.colored_label(color, icon);
-                    ui.colored_label(color, text);
+                    ui.colored_label(color, text.as_ref());
                 });
             });
     }
@@ -470,6 +504,7 @@ impl eframe::App for App {
             dirs_only: self.dirs_only,
             formats: self.formats,
             theme: self.theme,
+            recent_inputs: self.recent_inputs.clone(),
         };
         eframe::set_value(storage, PERSIST_KEY, &state);
     }
@@ -491,6 +526,18 @@ mod tests {
         assert_eq!(state.exclude_dirs, default_exclude_dirs());
         assert_eq!(state.theme, ThemeChoice::System);
         assert_eq!(state.input_path, "C:\\x");
+        assert!(state.recent_inputs.is_empty());
+    }
+
+    #[test]
+    fn persisted_recent_inputs_round_trip() {
+        let state = PersistedState {
+            recent_inputs: vec!["C:\\a".to_string(), "D:\\b".to_string()],
+            ..PersistedState::default()
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let back: PersistedState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.recent_inputs, state.recent_inputs);
     }
     #[test]
     fn persisted_theme_round_trips() {
