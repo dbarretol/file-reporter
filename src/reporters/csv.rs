@@ -1,4 +1,5 @@
-use crate::models::FileRecord;
+use crate::models::{FileRecord, Node};
+use crate::scanner;
 use anyhow::{Context, Result};
 use std::borrow::Cow;
 use std::fs::File;
@@ -22,7 +23,9 @@ fn sanitize_for_spreadsheet(s: &str) -> Cow<'_, str> {
     }
 }
 
-pub fn write_csv(records: &[FileRecord], output: &Path) -> Result<()> {
+/// Escribe una fila por archivo del árbol, generándolas de una en una
+/// mientras se recorre (sin una lista intermedia en memoria).
+pub fn write_csv(root: &Node, output: &Path) -> Result<()> {
     // 1. Crear el archivo manualmente para poder escribir el BOM primero.
     let file = File::create(output)
         .with_context(|| format!("No se pudo crear CSV en {}", output.display()))?;
@@ -45,15 +48,16 @@ pub fn write_csv(records: &[FileRecord], output: &Path) -> Result<()> {
     //    disco, fuera del control del usuario (descargas, carpetas
     //    compartidas): se sanean antes de escribir para evitar CSV
     //    injection. `extension`/fechas/tamaños no son texto libre.
-    for r in records {
+    scanner::try_for_each_record(root, &mut |r| {
         let sanitized = FileRecord {
             name: sanitize_for_spreadsheet(&r.name).into_owned(),
             directory: sanitize_for_spreadsheet(&r.directory).into_owned(),
             full_path: sanitize_for_spreadsheet(&r.full_path).into_owned(),
-            ..r.clone()
+            ..r
         };
-        wtr.serialize(&sanitized)?;
-    }
+        wtr.serialize(&sanitized)
+            .with_context(|| format!("No se pudo escribir el CSV en {}", output.display()))
+    })?;
 
     wtr.flush()?;
     Ok(())
@@ -79,28 +83,25 @@ mod tests {
 
     #[test]
     fn write_csv_neutralizes_formula_injection_in_name() {
+        // Nombres reales en disco (válidos también en Windows) que Excel
+        // evaluaría como fórmula al abrir report.csv (CSV injection).
         let dir = tempfile::tempdir().unwrap();
-        let output = dir.path().join("report.csv");
+        let input = dir.path().join("in");
+        std::fs::create_dir(&input).unwrap();
+        for name in ["=1+1.txt", "-informe.txt", "@evil.txt"] {
+            std::fs::write(input.join(name), "x").unwrap();
+        }
+        let tree = scanner::build_tree(&input, &scanner::ScanOptions::default()).unwrap();
 
-        let record = FileRecord {
-            name: "=cmd|'/c calc'!A1".to_string(),
-            extension: "txt".to_string(),
-            size_mb: 0.0,
-            size_bytes: 0,
-            created: String::new(),
-            modified: String::new(),
-            created_iso: String::new(),
-            modified_iso: String::new(),
-            directory: "-informe".to_string(),
-            full_path: "@evil".to_string(),
-        };
-        write_csv(&[record], &output).unwrap();
+        let output = dir.path().join("report.csv");
+        write_csv(&tree, &output).unwrap();
 
         let content = std::fs::read_to_string(&output).unwrap();
-        // Regresión: sin el fix, Excel evaluaría estos campos como fórmulas
-        // al abrir report.csv (CSV injection, ver tarea 37).
-        assert!(content.contains("'=cmd|'/c calc'!A1"));
-        assert!(content.contains("'-informe"));
-        assert!(content.contains("'@evil"));
+        assert!(content.starts_with('\u{feff}'), "falta el BOM UTF-8");
+        assert_eq!(content.lines().count(), 4, "cabecera + 3 filas");
+        // `name` es la primera columna: cada fila empieza por el nombre saneado.
+        assert!(content.contains("\n'=1+1;"));
+        assert!(content.contains("\n'-informe;"));
+        assert!(content.contains("\n'@evil;"));
     }
 }

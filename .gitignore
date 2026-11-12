@@ -27,3 +27,8 @@ rust-project.json
 
 # Binarios sueltos en la raíz (el build vive en target/)
 *.exe
+
+# Configuración local del asistente de IA (no se publica)
+.claude/
+CLAUDE.md
+CLAUDE.local.md

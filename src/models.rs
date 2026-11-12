@@ -24,6 +24,26 @@ pub struct FileRecord {
     pub full_path: String,
 }
 
+/// Cantidad y tamaño total de los archivos de una extensión.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtStat {
+    /// Extensión en minúsculas, sin punto; vacía para archivos sin extensión.
+    pub extension: String,
+    pub count: usize,
+    pub bytes: u64,
+}
+
+impl ExtStat {
+    /// Nombre para mostrar: `.pdf`, o "(sin extensión)".
+    pub fn label(&self) -> String {
+        if self.extension.is_empty() {
+            "(sin extensión)".to_string()
+        } else {
+            format!(".{}", self.extension)
+        }
+    }
+}
+
 /// Nodo del árbol jerárquico (para JSON y Markdown).
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]

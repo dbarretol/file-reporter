@@ -3,6 +3,7 @@
 
 mod cli;
 mod gui;
+mod icon;
 mod models;
 mod reporters;
 mod runner;
@@ -19,7 +20,7 @@ use std::time::Instant;
 /// profundo (rutas largas de Windows con `\\?\`, hasta ~32 767 caracteres)
 /// podría, en teoría, agotarlo. 16 MB da margen amplio para ese caso extremo
 /// sin coste real (unos pocos hilos reservan memoria virtual, no física, por
-/// adelantado). Ver tarea 23 en tasks.md.
+/// adelantado).
 pub const SCAN_THREAD_STACK_SIZE: usize = 16 * 1024 * 1024;
 
 fn main() -> Result<()> {
@@ -45,12 +46,16 @@ fn main() -> Result<()> {
     let input = parsed.path.clone();
     let output = parsed.output.clone().unwrap_or_else(|| input.clone());
     let extensions = parsed.normalized_extensions();
+    let exclude_dirs = parsed.excluded_dirs();
 
     if parsed.dirs_only {
         println!("📂 Modo: solo estructura de carpetas");
     }
     if !extensions.is_empty() {
         println!("🎯 Filtrando extensiones: {:?}", extensions);
+    }
+    if !exclude_dirs.is_empty() {
+        println!("🚫 Omitiendo carpetas: {:?}", exclude_dirs);
     }
     println!("🔍 Escaneando: {}", input.display());
 
@@ -61,18 +66,38 @@ fn main() -> Result<()> {
             output,
             extensions,
             dirs_only: parsed.dirs_only,
+            exclude_dirs,
+            formats: parsed.formats_or_all(),
         },
         None,
     )?;
 
     println!("\n✅ Reportes generados correctamente:");
-    println!("   📄 CSV:      {}", summary.csv_path.display());
-    println!("   📄 Markdown: {}", summary.md_path.display());
-    println!("   📄 JSON:     {}", summary.json_path.display());
+    for (format, path) in &summary.reports {
+        let label = format!("{}:", format.label());
+        println!("   📄 {label:<9} {}", path.display());
+    }
     if summary.dirs_only {
         println!("\n📊 Carpetas procesadas: {}", summary.dirs_count);
     } else {
-        println!("\n📊 Archivos procesados: {}", summary.files_count);
+        println!(
+            "\n📊 Archivos procesados: {} · {}",
+            summary.files_count,
+            runner::format_size(summary.total_bytes)
+        );
+        let rows = runner::top_types(&summary.ext_stats, 5);
+        if !rows.is_empty() {
+            println!("\n🗂️  Tipos de archivo (por tamaño):");
+            for r in rows {
+                println!(
+                    "   {:<18} {:>7} arch. · {:>9} · {:>7}",
+                    r.label,
+                    r.count,
+                    runner::format_size(r.bytes),
+                    runner::format_percent(r.bytes, summary.total_bytes)
+                );
+            }
+        }
     }
     if summary.skipped_count > 0 {
         println!(

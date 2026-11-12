@@ -1,7 +1,9 @@
 [package]
 name = "file-reporter"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
+# Mínimo que exigen egui/eframe 0.37.
+rust-version = "1.95"
 description = "Fast CLI + GUI to scan folders and generate CSV, Markdown and JSON reports"
 license = "MIT"
 repository = "https://github.com/dbarretol/file-reporter"
@@ -20,20 +22,18 @@ rayon = "1.10"
 
 # GUI
 #
-# Fijado en 0.30 (no la última disponible) a propósito: 0.31+ renombra
-# Rounding -> CornerRadius y cambia Margin/CornerRadius/Shadow de f32 a
-# i8/u8, y 0.34+ reemplaza el método `update` de `eframe::App` por `ui`
-# con una firma distinta — ambos son refactors de API reales, no fixes,
-# y quedan fuera del alcance de esta tarea (ver tasks.md, punto 25).
-# 0.30 sí trae mejoras de plataforma sobre 0.28 sin requerir cambios de
-# código en este crate (build+test+clippy verificados sin tocar src/).
-#
 # `x11` y `wayland` son imprescindibles en Linux: sin ellas (al desactivar
 # las default-features) winit no tiene backend de ventanas y el crate no
 # compila ("platform not supported by winit"). En Windows/macOS no afectan.
-eframe = { version = "0.30", default-features = false, features = ["default_fonts", "glow", "persistence", "x11", "wayland"] }
-egui = "0.30"
-rfd = "0.15"          # Diálogo nativo de selección de carpetas
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "persistence", "x11", "wayland"] }
+# Desde 0.37 las fuentes de emoji ya no vienen por defecto; la interfaz usa
+# emoji en etiquetas y botones.
+egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
+rfd = "0.18"          # Diálogo nativo de selección de carpetas
+
+# Incrusta el icono y los metadatos de versión en el .exe (ver build.rs).
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 [dev-dependencies]
 tempfile = "3.10"
@@ -42,5 +42,14 @@ tempfile = "3.10"
 opt-level = 3
 lto = true
 # No usar panic = "abort": rompería el catch_unwind del worker de la GUI
-# (src/gui.rs, start_run) que evita que un panic interno tumbe la app.
+# (src/gui/run.rs, start_run) que evita que un panic interno tumbe la app.
 strip = true
+# Para probar la app durante el desarrollo: casi tan rápida como `release`
+# pero sin LTO y con compilación incremental, así que recompila en segundos
+# en vez de minutos. Uso: `cargo run --profile fast` (sale en target/fast/).
+[profile.fast]
+inherits = "release"
+lto = false
+strip = false
+codegen-units = 256
+incremental = true

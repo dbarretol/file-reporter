@@ -6,7 +6,7 @@
 
 **Escanea una carpeta y obtén, en segundos, un inventario completo de su contenido en CSV, Markdown y JSON.**
 
-File Reporter es una herramienta escrita en Rust con **interfaz gráfica** (para uso diario) y **línea de comandos** (para scripts y automatización). Recorre el directorio en paralelo y genera tres reportes con la estructura de carpetas y los metadatos de cada archivo.
+File Reporter es una herramienta escrita en Rust con **interfaz gráfica** (para uso diario) y **línea de comandos** (para scripts y automatización). Recorre el directorio en paralelo y genera hasta tres reportes con la estructura de carpetas y los metadatos de cada archivo.
 
 ```text
 $ file-reporter C:\Demo\Proyecto
@@ -16,7 +16,12 @@ $ file-reporter C:\Demo\Proyecto
    📄 Markdown: C:\Demo\Proyecto\report.md
    📄 JSON:     C:\Demo\Proyecto\report.json
 
-📊 Archivos procesados: 4
+📊 Archivos procesados: 4 · 1.3 MB
+
+🗂️  Tipos de archivo (por tamaño):
+   .pdf                     1 arch. ·    1.3 MB ·  99.4 %
+   .rs                      2 arch. ·    6.4 KB ·   0.5 %
+   .md                      1 arch. ·    1.8 KB ·   0.1 %
 ⏱️  Tiempo: 1.98ms
 ```
 
@@ -64,6 +69,8 @@ C:\Demo\Proyecto
 - 📅 Metadatos por archivo: nombre, extensión, tamaño (MB y bytes exactos), fechas de creación y modificación, y ruta.
 - 🎯 **Filtro por extensiones** (`pdf, docx, jpg…`).
 - 📂 **Modo solo carpetas:** genera únicamente la jerarquía de directorios, sin archivos.
+- 🗂️ **Resumen por tipo de archivo:** cantidad, tamaño y porcentaje de cada extensión, en la GUI, en la consola y en `report.md`.
+- 🚫 **Omite carpetas por nombre** en cualquier nivel (`.git`, `node_modules`, `target`…), sin llegar a leerlas.
 
 **Rendimiento y robustez**
 - 🚀 Escaneo **paralelo** con [`rayon`](https://crates.io/crates/rayon), en una sola pasada por el disco.
@@ -73,24 +80,38 @@ C:\Demo\Proyecto
 
 **Interfaz gráfica**
 - 🖱️ Arrastra y suelta una carpeta sobre la ventana, o usa "Examinar…".
-- 📈 Barra de progreso con tiempo estimado y botón para **cancelar** en cualquier momento.
+- ✅ Valida las rutas mientras escribes e indica dónde se guardarán los reportes.
+- 📈 Contador en vivo y tiempo transcurrido; **cancela** en cualquier momento con el botón o con Esc.
+- 📊 Resultado en una ventana propia: archivos, tamaño total, tiempo y tipos de archivo; abre o copia la ruta de cada reporte.
+- 🔔 Si la ventana está en segundo plano, parpadea en la barra de tareas al terminar.
 - ⚠️ Pide confirmación antes de sobrescribir reportes anteriores.
-- ♻️ Recuerda rutas y opciones entre sesiones.
-- 🎨 Tema claro u oscuro según el sistema operativo.
+- ♻️ Recuerda rutas, opciones y tema entre sesiones.
+- 🎨 Tema claro, oscuro o el del sistema operativo, a elegir en la cabecera.
 
 ---
 
 ## 📦 Instalación
 
-### Requisitos
+### Descargar el ejecutable
 
-- [Rust](https://rustup.rs/) (toolchain estable).
-- **Solo en Linux:** dependencias del sistema para la GUI y los diálogos nativos:
-  ```bash
-  sudo apt install libgtk-3-dev libxkbcommon-dev
-  ```
+En [**Releases**](https://github.com/dbarretol/file-reporter/releases/latest) hay ejecutables listos para usar, sin instalar nada más:
+
+| Sistema | Archivo |
+|---|---|
+| Windows (64 bits) | `file-reporter-vX.Y.Z-windows-x64.exe` |
+| Linux (64 bits) | `file-reporter-vX.Y.Z-linux-x64.tar.gz` |
+
+En Windows basta con abrir el `.exe` (doble clic para la interfaz gráfica). Como el ejecutable no está firmado, SmartScreen puede avisar la primera vez: *Más información → Ejecutar de todas formas*. En Linux, descomprime el archivo y ejecuta `./file-reporter`; la interfaz gráfica necesita GTK 3, que traen la mayoría de escritorios.
 
 ### Compilar desde el código fuente
+
+Requisitos:
+
+- [Rust](https://rustup.rs/) 1.95 o superior (toolchain estable).
+- **Solo en Linux:** dependencias del sistema para la GUI y los diálogos nativos:
+  ```bash
+  sudo apt install libgtk-3-dev libxkbcommon-dev libwayland-dev
+  ```
 
 ```bash
 git clone https://github.com/dbarretol/file-reporter.git
@@ -121,9 +142,11 @@ El mismo ejecutable funciona en dos modos:
 
 1. Elige la **carpeta a escanear**: escribe la ruta, pulsa "Examinar…" o arrástrala a la ventana.
 2. *(Opcional)* Elige una **carpeta de salida**. Por defecto, la misma carpeta escaneada.
-3. *(Opcional)* Escribe las **extensiones** a incluir o usa una de las sugerencias.
-4. *(Opcional)* Marca **Solo carpeta (omitir archivos)** para obtener solo la jerarquía de directorios.
-5. Pulsa **▶ Generar reportes** (o Enter).
+3. *(Opcional)* Escribe las **extensiones** a incluir. Las sugerencias se suman a lo escrito; pulsarlas otra vez las quita.
+4. *(Opcional)* Revisa las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas, o pulsa la sugerencia "Carpetas de proyectos" para quitarlas o volver a ponerlas.
+5. *(Opcional)* Marca **Solo carpetas (omitir archivos)** para obtener solo la jerarquía de directorios.
+6. *(Opcional)* Desmarca los **formatos** que no necesites (CSV, Markdown, JSON).
+7. Pulsa **▶ Generar reportes** (o Enter). Al terminar se abre una ventana con el resultado: los reportes (abrir o copiar su ruta), la carpeta de salida y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
 
 ### ⌨️ Línea de comandos
 
@@ -140,6 +163,13 @@ file-reporter /ruta -o /ruta/reportes
 
 # Solo la estructura de carpetas
 file-reporter /ruta -d
+
+# Solo algunos formatos
+file-reporter /ruta -f csv,md
+
+# Omitir carpetas por nombre (.git, node_modules, target… con --exclude-common)
+file-reporter /ruta --exclude-common
+file-reporter /ruta -x "mis fotos" -x tmp,cache
 ```
 
 En Windows (PowerShell):
@@ -151,9 +181,12 @@ En Windows (PowerShell):
 | Opción | Descripción |
 |---|---|
 | `<PATH>` | Carpeta a escanear **(obligatorio)** |
-| `-e`, `--ext` | Extensiones a incluir. Sin esta opción se incluyen todas |
+| `-e`, `--ext` | Extensiones a incluir, separadas por coma, punto y coma o espacio (`"pdf, .DOCX"` vale). Sin esta opción se incluyen todas |
 | `-o`, `--output` | Carpeta de salida (por defecto: la carpeta escaneada) |
 | `-d`, `--dirs-only` | Solo estructura de carpetas. No se puede combinar con `-e` |
+| `-x`, `--exclude` | Carpeta a omitir por nombre (no ruta), en cualquier nivel y con todo su contenido. Se puede repetir o separar por comas |
+| `--exclude-common` | Omite `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build` |
+| `-f`, `--format` | Reportes a generar: `csv`, `md` (o `markdown`), `json`, separados por coma. Sin esta opción se generan los tres |
 | `-h`, `--help` / `-V`, `--version` | Ayuda / versión |
 
 > **Sobre las extensiones:** se usa lo que va tras el **último** punto del nombre. `foo.tar.gz` tiene extensión `gz`, no `tar.gz`. Los archivos sin punto (`LICENSE`, `Makefile`) no tienen extensión y quedan fuera de cualquier filtro.
@@ -162,12 +195,12 @@ En Windows (PowerShell):
 
 ## 📁 Reportes generados
 
-Cada ejecución crea tres archivos en la carpeta de salida:
+Cada ejecución crea en la carpeta de salida estos archivos (los tres por defecto, o los elegidos con `-f` o en la GUI):
 
 | Archivo | Contenido | Ideal para |
 |---|---|---|
 | `report.csv` | Una fila por archivo con todos sus metadatos | Excel, Pandas, hojas de cálculo |
-| `report.md` | Árbol de carpetas y archivos estilo `tree` | Documentación, READMEs |
+| `report.md` | Árbol de carpetas y archivos estilo `tree`, y tabla de tipos de archivo | Documentación, READMEs |
 | `report.json` | Árbol completo con metadatos | Scripts e integraciones |
 
 En **modo solo carpetas**, `report.md` y `report.json` contienen únicamente directorios y `report.csv` queda solo con la cabecera.
@@ -217,7 +250,17 @@ C:\Demo\Proyecto
 │   └── main.rs
 └── README.md
 ```
+
+## 📊 Tipos de archivo
+
+| Extensión | Archivos | Tamaño | % del tamaño |
+|---|--:|--:|--:|
+| .pdf | 1 | 1.3 MB | 99.4 % |
+| .rs | 2 | 6.4 KB | 0.5 % |
+| .md | 1 | 1.8 KB | 0.1 % |
 ````
+
+La tabla lista todas las extensiones, de mayor a menor tamaño total; no aparece en modo solo carpetas.
 
 </details>
 
@@ -269,16 +312,24 @@ CLI y GUI comparten exactamente la misma lógica; solo cambia la forma de recibi
 ```
 
 ```text
+build.rs             # Windows: incrusta el icono y la versión en el .exe
 src/
 ├── main.rs          # Punto de entrada: decide entre CLI y GUI
 ├── cli.rs           # Argumentos de línea de comandos (clap)
-├── gui.rs           # Interfaz gráfica (egui/eframe)
+├── gui/             # Interfaz gráfica (egui/eframe)
+│   ├── mod.rs       # Arranque, estado de la app y paneles fijos
+│   ├── form.rs      # Formulario y botones
+│   ├── run.rs       # Estado de la corrida e hilo de escaneo
+│   ├── results.rs   # Progreso y ventana de resultado
+│   ├── dialogs.rs   # Diálogo de sobrescritura y arrastrar y soltar
+│   └── …            # widgets, paleta de colores, utilidades
+├── icon.rs          # Icono de la app, dibujado por código (sin imágenes)
 ├── runner.rs        # Flujo común: escanear → escribir reportes
 ├── scanner.rs       # Recorrido paralelo del directorio
-├── models.rs        # Node (árbol) y FileRecord (fila del CSV)
+├── models.rs        # Node (árbol), FileRecord (fila del CSV) y ExtStat (tipos)
 └── reporters/
     ├── csv.rs       # CSV para Excel (BOM + ;)
-    ├── markdown.rs  # Árbol estilo tree
+    ├── markdown.rs  # Árbol estilo tree y tabla de tipos
     └── json.rs      # JSON con formato legible
 ```
 
@@ -288,8 +339,9 @@ src/
 <br>
 
 - **Una sola pasada por el disco:** no se cuentan los archivos antes de escanearlos. El progreso se reporta en vivo mientras se recorre el árbol.
-- **Symlinks y junctions:** se usa `symlink_metadata` para no seguir enlaces y evitar ciclos. La carpeta raíz elegida por el usuario sí se sigue aunque sea un enlace (por ejemplo, carpetas de OneDrive).
-- **Errores por elemento:** una carpeta sin permisos se omite y se contabiliza; no detiene el escaneo.
+- **Pocas llamadas al sistema:** el tipo y los metadatos de cada entrada salen de la propia lectura del directorio (en Windows, sin abrir cada archivo); los archivos que no pasan el filtro se descartan antes de leer sus metadatos, y el CSV se escribe directamente desde el árbol, sin una copia intermedia en memoria.
+- **Symlinks y junctions:** no se siguen (se detectan con el tipo de la entrada), lo que evita ciclos. La carpeta raíz elegida por el usuario sí se sigue aunque sea un enlace (por ejemplo, carpetas de OneDrive).
+- **Errores por elemento:** una carpeta sin permisos se omite y se contabiliza; no detiene el escaneo. Las carpetas omitidas a propósito (por nombre) no cuentan como errores.
 - **GUI siempre responsiva:** el escaneo corre en un hilo aparte con pila ampliada y `catch_unwind`, de modo que un panic interno se muestra como error y no cierra la aplicación. La cancelación se distingue de un error real mediante una bandera compartida.
 - **Rutas Unicode:** acentos y emojis se conservan en los tres reportes, y la exclusión de los propios reportes compara rutas sin distinguir mayúsculas, también fuera de ASCII.
 
@@ -304,9 +356,8 @@ src/
 [`serde`](https://crates.io/crates/serde) + [`serde_json`](https://crates.io/crates/serde_json) ·
 [`csv`](https://crates.io/crates/csv) ·
 [`chrono`](https://crates.io/crates/chrono) ·
-[`anyhow`](https://crates.io/crates/anyhow)
-
-> `egui`/`eframe` están fijados en la versión `0.30` a propósito: las siguientes traen cambios de API que requieren una migración aparte (ver el comentario en `Cargo.toml`).
+[`anyhow`](https://crates.io/crates/anyhow) ·
+[`winresource`](https://crates.io/crates/winresource) (icono del `.exe`)
 
 ---
 
@@ -316,28 +367,29 @@ src/
 cargo test                          # tests
 cargo fmt --check                   # formato
 cargo clippy --all-targets -- -D warnings   # lint
+cargo run --profile fast            # probar la app: recompila en segundos (sin LTO)
 ```
 
-Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)) y cubren escaneo, filtros, modo solo carpetas, cancelación, los tres formatos de salida y la protección del CSV. En Windows también crean *junctions* para probar el manejo de enlaces sin necesidad de permisos de administrador.
+`--release` activa LTO, que da el ejecutable más rápido pero tarda minutos en recompilar; el perfil `fast` optimiza casi igual y es el indicado mientras se desarrolla.
 
-Cada push a `master` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu.
+Los tests trabajan sobre un sistema de archivos real (carpetas temporales con [`tempfile`](https://crates.io/crates/tempfile)) y cubren escaneo, filtros, exclusión de carpetas, modo solo carpetas, cancelación, estadísticas por tipo, los tres formatos de salida y la protección del CSV. En Windows también crean *junctions* para probar el manejo de enlaces sin necesidad de permisos de administrador.
+
+Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.github/workflows/ci.yml) en Windows y Ubuntu. Al subir un tag `vX.Y.Z`, [otro workflow](.github/workflows/release.yml) compila los ejecutables y prepara un borrador de *Release* con las notas de [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
 ## 🧭 Hoja de ruta
 
-- [ ] Lista configurable de carpetas a excluir (`.git`, `node_modules`, …).
-- [ ] Tamaño total en el resumen final.
-- [ ] Vista previa del árbol antes de exportar.
-- [ ] Selector manual de tema claro/oscuro.
-- [ ] Binarios precompilados en *Releases* e instalador `.msi`.
-- [ ] Migración a egui/eframe 0.35+.
+- [ ] Instalador `.msi` para Windows ([#15](https://github.com/dbarretol/file-reporter/issues/15)).
+- [ ] Barra de progreso en la línea de comandos ([#7](https://github.com/dbarretol/file-reporter/issues/7)).
+- [ ] Registro de las rutas omitidas con `tracing` ([#8](https://github.com/dbarretol/file-reporter/issues/8)).
+- [ ] Vista previa del árbol antes de exportar ([#13](https://github.com/dbarretol/file-reporter/issues/13)).
 
 ---
 
 ## 🤝 Contribuciones
 
-Las contribuciones son bienvenidas. Para cambios grandes, abre primero un *issue* para comentar la propuesta. Después, haz un fork, crea una rama y envía un *pull request* describiendo los cambios.
+Las contribuciones son bienvenidas. Para cambios grandes, abre primero un *issue* para comentar la propuesta. Después, haz un fork, crea una rama desde `dev` y envía un *pull request* contra `dev` describiendo los cambios (`main` solo recibe versiones estables).
 
 ---
 

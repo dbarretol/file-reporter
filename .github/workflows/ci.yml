@@ -2,8 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main, dev]
   pull_request:
+
+# Un push nuevo a la misma rama/PR cancela la ejecución anterior, que ya
+# quedó obsoleta.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,7 +23,7 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux system dependencies (rfd / eframe)
         if: runner.os == 'Linux'
@@ -29,7 +35,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # Los PRs reutilizan la caché de su rama base, pero solo los push a
+      # main/dev la guardan: guardarla tarda casi un minuto en Windows y la de
+      # una rama de trabajo no la aprovecha nadie más.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Format
         run: cargo fmt --check

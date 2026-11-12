@@ -1,0 +1,104 @@
+name: Release
+
+# Al subir un tag `vX.Y.Z`: compila en Windows y Linux y crea un borrador de
+# Release con los ejecutables y las notas de esa versión en CHANGELOG.md.
+# El borrador se revisa y se publica a mano desde GitHub.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            asset: windows-x64
+          - os: ubuntu-latest
+            asset: linux-x64
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check that the tag matches Cargo.toml
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::El tag $GITHUB_REF_NAME no coincide con la versión de Cargo.toml ($version)"
+            exit 1
+          fi
+
+      - name: Install Linux system dependencies (rfd / eframe)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        shell: bash
+        run: |
+          name="file-reporter-${GITHUB_REF_NAME}-${{ matrix.asset }}"
+          mkdir dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp target/release/file-reporter.exe "dist/$name.exe"
+          else
+            # tar conserva el permiso de ejecución.
+            tar -czf "dist/$name.tar.gz" -C target/release file-reporter
+          fi
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Desde "## [X.Y.Z]" hasta el siguiente "## [" o los enlaces del final.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && index($0, "## [") == 1 { exit }
+            on && index($0, "[") == 1 && index($0, "]: ") > 0 { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md no tiene sección para $version"
+            exit 1
+          fi
+          cat notes.md
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --draft \
+            --title "File Reporter $GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --verify-tag
