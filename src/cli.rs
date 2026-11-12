@@ -1,4 +1,5 @@
 use crate::runner::{self, Progress, ReportFormat, RunConfig, RunSummary};
+use crate::summary;
 use anyhow::Result;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -6,7 +7,7 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -105,6 +106,88 @@ pub fn init_logging(verbose: u8) {
         .init();
 }
 
+/// Modo CLI completo: muestra la configuración, ejecuta con el indicador de
+/// progreso e imprime el resumen. Los errores los muestra `main`.
+pub fn run(args: &Cli) -> Result<()> {
+    init_logging(args.verbose);
+
+    let input = args.path.clone();
+    let output = args.output.clone().unwrap_or_else(|| input.clone());
+    let extensions = args.normalized_extensions();
+    let exclude_dirs = args.excluded_dirs();
+
+    if args.dirs_only {
+        println!("📂 Modo: solo estructura de carpetas");
+    }
+    if !extensions.is_empty() {
+        println!("🎯 Filtrando extensiones: {}", extensions.join(", "));
+    }
+    if !exclude_dirs.is_empty() {
+        println!("🚫 Omitiendo carpetas: {}", exclude_dirs.join(", "));
+    }
+    println!("🔍 Escaneando: {}", input.display());
+
+    let start = Instant::now();
+    let summary = run_with_progress(
+        &RunConfig {
+            input,
+            output,
+            extensions,
+            dirs_only: args.dirs_only,
+            exclude_dirs,
+            formats: args.formats_or_all(),
+        },
+        args.verbose == 0,
+    )?;
+    print!("{}", summary_text(&summary, args.verbose));
+    println!("⏱️  Tiempo: {:.2?}", start.elapsed());
+    Ok(())
+}
+
+/// Resumen que se imprime al terminar (sin el tiempo, que varía entre
+/// corridas): reportes generados, totales, tipos de archivo y lo omitido.
+fn summary_text(s: &RunSummary, verbose: u8) -> String {
+    let mut out = String::from("\n✅ Reportes generados correctamente:\n");
+    for (format, path) in &s.reports {
+        let label = format!("{}:", format.label());
+        out += &format!("   📄 {label:<9} {}\n", path.display());
+    }
+    if s.dirs_only {
+        out += &format!("\n📊 Carpetas procesadas: {}\n", s.dirs_count);
+    } else {
+        out += &format!(
+            "\n📊 Archivos procesados: {} · {}\n",
+            s.files_count,
+            summary::format_size(s.total_bytes)
+        );
+        let rows = summary::top_types(&s.ext_stats, 5);
+        if !rows.is_empty() {
+            out += "\n🗂️  Tipos de archivo (por tamaño):\n";
+            for r in rows {
+                out += &format!(
+                    "   {:<18} {:>7} arch. · {:>9} · {:>7}\n",
+                    r.label,
+                    r.count,
+                    summary::format_size(r.bytes),
+                    summary::format_percent(r.bytes, s.total_bytes)
+                );
+            }
+        }
+    }
+    if let Some(text) = summary::excluded_dirs_text(&s.excluded_dirs) {
+        out += &format!("🚫 {text}\n");
+    }
+    if s.skipped_count > 0 {
+        let hint = if verbose == 0 {
+            " (usa -v para ver cuáles)"
+        } else {
+            ""
+        };
+        out += &format!("⚠️  {}{hint}\n", summary::skipped_text(s.skipped_count));
+    }
+    out
+}
+
 /// Cada cuánto se refresca el spinner (giro y contador).
 const SPINNER_TICK: Duration = Duration::from_millis(100);
 
@@ -150,13 +233,13 @@ pub fn run_with_progress(cfg: &RunConfig, show: bool) -> Result<RunSummary> {
 fn progress_message(progress: &Progress, dirs_only: bool) -> String {
     let found = progress.done.load(Ordering::Relaxed);
     if progress.writing.load(Ordering::Relaxed) {
-        let noun = runner::found_noun(dirs_only);
+        let noun = summary::found_noun(dirs_only);
         format!("Escribiendo reportes… ({found} {noun})")
     } else {
         let dirs = progress.dirs_scanned.load(Ordering::Relaxed);
         format!(
             "Escaneando… {}",
-            runner::scan_status(found, dirs, dirs_only)
+            summary::scan_status(found, dirs, dirs_only)
         )
     }
 }

@@ -60,7 +60,7 @@ impl ActiveRun {
 
     /// Qué se cuenta en esta corrida, para los textos de progreso.
     pub fn noun(&self) -> &'static str {
-        runner::found_noun(self.dirs_only)
+        crate::summary::found_noun(self.dirs_only)
     }
 }
 

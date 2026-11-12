@@ -4,6 +4,10 @@ Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https
 
 ## [Sin publicar]
 
+### Cambiado
+
+- **Errores de la CLI en una línea:** `❌ <error>: <causa>`, en vez del formato de depuración (`Error: …` y `Caused by:`). El código de salida sigue siendo 1. Las extensiones y carpetas omitidas del encabezado se muestran como lista (`pdf, docx`) en lugar de `["pdf", "docx"]` ([#55](https://github.com/dbarretol/file-reporter/issues/55)).
+
 ### Añadido
 
 - **Carpetas omitidas por nombre en el resultado:** la ventana de resultado y la salida de la CLI dicen cuántas carpetas se omitieron por nombre y cuáles, p. ej. "3 carpetas omitidas por nombre (.git, build ×2)". Antes una carpeta `build` o `dist` con contenido propio podía quedar fuera del reporte sin aviso ([#47](https://github.com/dbarretol/file-reporter/issues/47)).

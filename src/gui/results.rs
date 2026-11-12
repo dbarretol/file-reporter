@@ -7,7 +7,8 @@ use super::util::{fmt_seconds, open_in_explorer, open_selecting};
 use super::widgets::{panel_title, result_row, RowAction};
 use super::{App, Copied};
 use crate::models::ExtStat;
-use crate::runner::{self, RunSummary};
+use crate::runner::RunSummary;
+use crate::summary;
 use eframe::egui;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -34,7 +35,7 @@ impl App {
                     let text = if run.writing() {
                         format!("Generando reportes… ({done} {})", run.noun())
                     } else {
-                        let status = runner::scan_status(done, run.dirs_scanned(), run.dirs_only);
+                        let status = summary::scan_status(done, run.dirs_scanned(), run.dirs_only);
                         format!("Escaneando… {status}")
                     };
                     ui.label(egui::RichText::new(text).size(13.0));
@@ -70,7 +71,7 @@ impl App {
                     format!(
                         "{} archivos · {}",
                         s.files_count,
-                        runner::format_size(s.total_bytes)
+                        summary::format_size(s.total_bytes)
                     )
                 };
                 (palette.success, "✅", text)
@@ -208,14 +209,14 @@ impl App {
                     format!(
                         "📊 {} archivos · {} · ⏱ {elapsed}",
                         s.files_count,
-                        runner::format_size(s.total_bytes)
+                        summary::format_size(s.total_bytes)
                     )
                 };
                 ui.label(counts);
                 // Lo que falta en el reporte, a propósito (carpetas omitidas
                 // por nombre) o no (sin acceso), para que nadie lo dé por
                 // completo sin saberlo.
-                if let Some(text) = runner::excluded_dirs_text(&s.excluded_dirs) {
+                if let Some(text) = summary::excluded_dirs_text(&s.excluded_dirs) {
                     ui.label(egui::RichText::new(format!("🚫 {text}")).color(palette.muted))
                         .on_hover_text("Se configuran en «Carpetas a omitir».");
                 }
@@ -255,7 +256,7 @@ impl App {
             } => {
                 // Neutral, no rojo: cancelar no es un error del programa,
                 // es una acción deliberada del usuario.
-                let noun = crate::runner::found_noun(*dirs_only);
+                let noun = summary::found_noun(*dirs_only);
                 let elapsed = fmt_seconds(elapsed.as_secs_f32());
                 panel_title(ui, palette.warning, "⏹", "Escaneo cancelado");
                 ui.add_space(4.0);
@@ -285,7 +286,7 @@ enum ResultAction {
 /// `scanner::SKIPPED_LIST_LIMIT`) con el motivo de cada uno y un botón para
 /// copiarla. Devuelve `true` si se pulsó "Copiar lista".
 fn render_skipped(ui: &mut egui::Ui, palette: &Palette, s: &RunSummary, copied: bool) -> bool {
-    let title = egui::RichText::new(format!("⚠ {}", runner::skipped_text(s.skipped_count)))
+    let title = egui::RichText::new(format!("⚠ {}", summary::skipped_text(s.skipped_count)))
         .color(palette.warning);
     let mut copy = false;
     egui::CollapsingHeader::new(title)
@@ -363,7 +364,7 @@ fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], to
                 // para botones) y la tabla queda demasiado espaciada.
                 .min_row_height(18.0)
                 .show(ui, |ui| {
-                    for row in runner::top_types(stats, TOP_TYPES) {
+                    for row in summary::top_types(stats, TOP_TYPES) {
                         // Números en monoespaciada con relleno para que queden
                         // alineados a la derecha (un `Layout::right_to_left`
                         // dentro del Grid estira la fila en alto).
@@ -372,7 +373,7 @@ fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], to
                             egui::RichText::new(format!("{:>7} arch.", row.count)).monospace(),
                         );
                         ui.label(
-                            egui::RichText::new(format!("{:>9}", runner::format_size(row.bytes)))
+                            egui::RichText::new(format!("{:>9}", summary::format_size(row.bytes)))
                                 .monospace(),
                         );
                         ui.horizontal(|ui| {
@@ -383,7 +384,7 @@ fn render_type_stats(ui: &mut egui::Ui, palette: &Palette, stats: &[ExtStat], to
                             };
                             share_bar(ui, palette, fraction);
                             ui.label(
-                                egui::RichText::new(runner::format_percent(row.bytes, total))
+                                egui::RichText::new(summary::format_percent(row.bytes, total))
                                     .color(palette.muted)
                                     .size(12.0),
                             );
