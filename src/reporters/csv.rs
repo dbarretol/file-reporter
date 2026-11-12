@@ -117,7 +117,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("in");
         std::fs::create_dir(&input).unwrap();
-        for name in ["=1+1.txt", "-informe.txt", "@evil.txt"] {
+        for name in ["=1+1.txt", "-informe.txt", "@evil.txt", "x.=1+1"] {
             std::fs::write(input.join(name), "x").unwrap();
         }
         let tree = scanner::build_tree(&input, &scanner::ScanOptions::default()).unwrap();
@@ -127,28 +127,14 @@ mod tests {
 
         let content = std::fs::read_to_string(&output).unwrap();
         assert!(content.starts_with('\u{feff}'), "falta el BOM UTF-8");
-        assert_eq!(content.lines().count(), 4, "cabecera + 3 filas");
+        assert_eq!(content.lines().count(), 5, "cabecera + 4 filas");
         // `name` es la primera columna: cada fila empieza por el nombre saneado.
         assert!(content.contains("\n'=1+1;"));
         assert!(content.contains("\n'-informe;"));
         assert!(content.contains("\n'@evil;"));
-    }
-
-    #[test]
-    fn write_csv_neutralizes_formula_injection_in_extension() {
-        // La extensión también sale del nombre en disco: `x.=1+1` tiene
-        // extensión `=1+1`, que Excel evaluaría como fórmula.
-        let dir = tempfile::tempdir().unwrap();
-        let input = dir.path().join("in");
-        std::fs::create_dir(&input).unwrap();
-        std::fs::write(input.join("x.=1+1"), "x").unwrap();
-        let tree = scanner::build_tree(&input, &scanner::ScanOptions::default()).unwrap();
-
-        let output = dir.path().join("report.csv");
-        write_csv(&tree, &output).unwrap();
-
-        let content = std::fs::read_to_string(&output).unwrap();
-        assert!(content.contains("\nx;'=1+1;"), "{content}");
+        // La extensión también sale del nombre: en `x.=1+1` Excel evaluaría
+        // `=1+1` como fórmula en la segunda columna.
+        assert!(content.contains("\nx;'=1+1;"));
     }
 
     #[test]

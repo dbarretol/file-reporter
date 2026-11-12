@@ -10,7 +10,7 @@ Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https
 
 ### Corregido
 
-- **CSV:** la columna `extension` también se protege contra *formula injection*: un archivo `x.=1+1` ya no deja una fórmula en la hoja ([#41](https://github.com/dbarretol/file-reporter/issues/41)).
+- **CSV:** la columna `extension` también se protege contra *formula injection*: un archivo `x.=1+1` ya no deja una fórmula en la hoja ([#41](https://github.com/dbarretol/file-reporter/issues/41), [#56](https://github.com/dbarretol/file-reporter/pull/56), gracias a @bfs2021).
 - **CSV:** sin archivos que listar (modo solo carpetas o filtro sin coincidencias), `report.csv` conserva la cabecera en vez de quedar vacío ([#43](https://github.com/dbarretol/file-reporter/issues/43)).
 - **Markdown:** un nombre con tres acentos graves seguidos ya no cierra antes de tiempo el bloque del árbol ([#44](https://github.com/dbarretol/file-reporter/issues/44)).
 
