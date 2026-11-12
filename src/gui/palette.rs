@@ -80,7 +80,26 @@ impl ThemeChoice {
         }
     }
 
-    pub fn to_egui(self) -> egui::ThemePreference {
+    /// Aplica el tema a la interfaz y también a la barra de título, que
+    /// dibuja el sistema operativo: sin el `SetTheme`, en Windows sus botones
+    /// (minimizar, maximizar, cerrar) quedaban con los colores del otro tema
+    /// y apenas se veían.
+    pub fn apply(self, ctx: &egui::Context) {
+        ctx.set_theme(self.to_egui());
+        self.apply_native(ctx);
+    }
+
+    /// Solo la barra de título (ver `apply`).
+    pub fn apply_native(self, ctx: &egui::Context) {
+        let native = match self {
+            Self::System => egui::SystemTheme::SystemDefault,
+            Self::Light => egui::SystemTheme::Light,
+            Self::Dark => egui::SystemTheme::Dark,
+        };
+        ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(native));
+    }
+
+    fn to_egui(self) -> egui::ThemePreference {
         match self {
             Self::System => egui::ThemePreference::System,
             Self::Light => egui::ThemePreference::Light,

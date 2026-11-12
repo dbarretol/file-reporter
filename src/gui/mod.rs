@@ -82,6 +82,15 @@ fn default_exclude_dirs() -> String {
 
 const PERSIST_KEY: &str = eframe::APP_KEY;
 
+/// Momentos, desde que la ventana se ve, en que se reenvía el tema a la
+/// barra de título al arrancar; ver `App::sync_native_theme`.
+const NATIVE_THEME_SYNC_AT: [Duration; 4] = [
+    Duration::ZERO,
+    Duration::from_millis(300),
+    Duration::from_millis(1000),
+    Duration::from_millis(2500),
+];
+
 #[derive(Default)]
 struct App {
     // Formulario
@@ -95,6 +104,10 @@ struct App {
     formats: [bool; 3],
     /// Tema elegido en la cabecera (por defecto, el del sistema).
     theme: ThemeChoice,
+    /// Reenvíos del tema a la barra de título ya hechos al arrancar y
+    /// cuándo se vio la ventana por primera vez (ver `sync_native_theme`).
+    native_theme_syncs: usize,
+    shown_at: Option<Instant>,
 
     /// Validación en vivo de las rutas tecleadas (ver `PathCheck`).
     input_check: PathCheck,
@@ -166,7 +179,7 @@ impl App {
             .storage
             .and_then(|s| eframe::get_value::<PersistedState>(s, PERSIST_KEY))
             .unwrap_or_default();
-        cc.egui_ctx.set_theme(state.theme.to_egui());
+        state.theme.apply(&cc.egui_ctx);
         App {
             input_path: state.input_path,
             output_path: state.output_path,
@@ -239,6 +252,31 @@ impl App {
         }
     }
 
+    /// eframe crea la ventana oculta y la muestra tras el primer cuadro, así
+    /// que el tema aplicado en `App::new` le llega a la barra de título
+    /// (que dibuja Windows) antes de que sea visible y Windows no la
+    /// repinta: al arrancar en "Claro" con el sistema en oscuro, quedaba
+    /// oscura con los botones oscuros hasta hacer clic. Se reenvía varias
+    /// veces durante los primeros segundos desde el segundo cuadro (ya con la
+    /// ventana visible): un solo reenvío no siempre llegaba a tiempo. Cada
+    /// reenvío es invisible si la barra ya estaba bien.
+    fn sync_native_theme(&mut self, ctx: &egui::Context) {
+        let Some(&due) = NATIVE_THEME_SYNC_AT.get(self.native_theme_syncs) else {
+            return;
+        };
+        if ctx.cumulative_frame_nr() == 0 {
+            return;
+        }
+        let elapsed = self.shown_at.get_or_insert_with(Instant::now).elapsed();
+        if elapsed >= due {
+            self.theme.apply_native(ctx);
+            self.native_theme_syncs += 1;
+        }
+        if let Some(&next) = NATIVE_THEME_SYNC_AT.get(self.native_theme_syncs) {
+            ctx.request_repaint_after(next.saturating_sub(elapsed));
+        }
+    }
+
     /// Barra superior con el título y el selector de tema.
     fn render_header(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("header")
@@ -295,7 +333,7 @@ impl App {
         );
         if let Some(choice) = picked.filter(|c| *c != self.theme) {
             self.theme = choice;
-            ui.ctx().set_theme(choice.to_egui());
+            choice.apply(ui.ctx());
         }
     }
 
@@ -393,6 +431,7 @@ impl eframe::App for App {
 
         self.input_check.refresh(&self.input_path);
         self.output_check.refresh(&self.output_path);
+        self.sync_native_theme(ctx);
         self.expire_messages(ctx);
         self.poll_worker(ctx);
 
