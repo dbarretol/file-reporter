@@ -329,7 +329,7 @@ CLI y GUI comparten exactamente la misma lógica; solo cambia la forma de recibi
 build.rs             # Windows: incrusta el icono y la versión en el .exe
 src/
 ├── main.rs          # Punto de entrada: decide entre CLI y GUI
-├── cli.rs           # Argumentos de línea de comandos (clap) e indicador de progreso
+├── cli.rs           # Modo CLI: argumentos (clap), indicador de progreso y resumen final
 ├── gui/             # Interfaz gráfica (egui/eframe)
 │   ├── mod.rs       # Arranque, estado de la app y paneles fijos
 │   ├── form.rs      # Formulario y botones
@@ -339,9 +339,10 @@ src/
 │   └── …            # widgets, paleta de colores, utilidades
 ├── icon.rs          # Icono de la app, dibujado por código (sin imágenes)
 ├── runner.rs        # Flujo común: escanear → escribir reportes
+├── summary.rs       # Textos del resumen que comparten CLI y GUI (tamaños, tipos, avisos)
 ├── scanner.rs       # Recorrido paralelo del directorio
 ├── models.rs        # Node (árbol), FileRecord (fila del CSV) y ExtStat (tipos)
-└── reporters/
+└── reporters/      # Un módulo por formato; escritura segura a través de un temporal
     ├── csv.rs       # CSV para Excel (BOM + ;)
     ├── markdown.rs  # Árbol estilo tree y tabla de tipos
     └── json.rs      # JSON con formato legible
@@ -380,7 +381,7 @@ src/
 ## 🧪 Desarrollo
 
 ```bash
-cargo test                          # tests
+cargo test                          # tests (unitarios y de la CLI como programa, en tests/cli.rs)
 cargo fmt --check                   # formato
 cargo clippy --all-targets -- -D warnings   # lint
 cargo run --profile fast            # probar la app: recompila en segundos (sin LTO)
