@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -17,7 +17,8 @@ pub struct FileRecord {
     pub size_bytes: u64,
     pub created: String,
     pub modified: String,
-    /// Fecha y hora en ISO-8601 (`2024-03-15T14:23:01Z`). `created`/`modified`
+    /// Fecha y hora local en ISO-8601, con el desfase respecto de UTC
+    /// (`2024-03-15T14:23:01-05:00`). `created`/`modified`
     /// usan `DD/MM/AAAA` por compatibilidad con Excel, pero ese formato no
     /// ordena como texto ni conserva la hora; estas columnas permiten
     /// ordenar cronológicamente y recuperar la hora exacta.
@@ -62,8 +63,11 @@ pub enum Node {
         size_mb: f64,
         size_bytes: u64,
         extension: String,
-        created: Option<DateTime<Utc>>,
-        modified: Option<DateTime<Utc>>,
+        /// En la hora local del equipo, con su desfase: el JSON muestra
+        /// `2024-03-15T14:23:01-05:00` y el CSV la fecha del calendario local,
+        /// la misma que enseña el explorador de archivos.
+        created: Option<DateTime<Local>>,
+        modified: Option<DateTime<Local>>,
     },
 }
 

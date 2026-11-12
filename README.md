@@ -258,15 +258,15 @@ UTF-8 con BOM y separador `;`, para que Excel lo abra correctamente sin configur
 | `extension` | Extensión, sin punto |
 | `size_mb` | Tamaño en MB con 3 decimales y coma decimal (`1,270`), como lo espera Excel en español |
 | `size_bytes` | Tamaño exacto en bytes |
-| `created` / `modified` | Fechas en `DD/MM/AAAA` (formato que Excel reconoce directamente) |
-| `created_iso` / `modified_iso` | Fecha y hora en ISO-8601, ordenables como texto |
+| `created` / `modified` | Fechas en `DD/MM/AAAA` según la hora local del equipo, las mismas que muestra el explorador de archivos (formato que Excel reconoce directamente) |
+| `created_iso` / `modified_iso` | Fecha y hora local en ISO-8601, con el desfase respecto de UTC (`2026-11-12T14:13:21-05:00`), fáciles de ordenar y procesar |
 | `directory` | Carpeta que contiene el archivo |
 | `full_path` | Ruta completa |
 
 ```text
 name;extension;size_mb;size_bytes;created;modified;created_iso;modified_iso;directory;full_path
-manual;pdf;1,270;1331200;12/11/2026;12/11/2026;2026-11-12T19:13:21.368492800+00:00;2026-11-12T19:13:21.369491400+00:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\manual.pdf
-presupuesto;xlsx;0,047;49152;12/11/2026;12/11/2026;2026-11-12T19:13:21.370620500+00:00;2026-11-12T19:13:21.370620500+00:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\presupuesto.xlsx
+manual;pdf;1,270;1331200;12/11/2026;12/11/2026;2026-11-12T14:13:21.368492800-05:00;2026-11-12T14:13:21.369491400-05:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\manual.pdf
+presupuesto;xlsx;0,047;49152;12/11/2026;12/11/2026;2026-11-12T14:13:21.370620500-05:00;2026-11-12T14:13:21.370620500-05:00;E:\Demo\Proyecto\docs;E:\Demo\Proyecto\docs\presupuesto.xlsx
 ```
 
 Si un nombre, extensión o ruta empieza por `=`, `+`, `-`, `@`, tabulador o retorno de carro, se le antepone un apóstrofo para que Excel no lo ejecute como fórmula.
@@ -335,8 +335,8 @@ La tabla lista todas las extensiones, de mayor a menor tamaño total; no aparece
           "size_mb": 1.26953125,
           "size_bytes": 1331200,
           "extension": "pdf",
-          "created": "2026-11-12T19:13:21.368492800Z",
-          "modified": "2026-11-12T19:13:21.369491400Z"
+          "created": "2026-11-12T14:13:21.368492800-05:00",
+          "modified": "2026-11-12T14:13:21.369491400-05:00"
         }
       ]
     }
