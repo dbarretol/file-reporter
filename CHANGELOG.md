@@ -2,6 +2,12 @@
 
 Los cambios notables de cada versión. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [0.7.1] - 2026-11-12
+
+### Corregido
+
+- **Reportes anteriores con otra carpeta de salida:** al guardar los reportes en otra carpeta (`-o` en la CLI o "Carpeta de salida" en Opciones), los `report.*` que una ejecución anterior había dejado en la carpeta escaneada aparecían en el nuevo reporte como archivos más. Ahora se omiten, igual que en la carpeta de salida: los de nombre por defecto, los del nombre elegido, sus temporales y los de nombre automático. Solo se omiten directamente en la carpeta escaneada; un `report.csv` en una subcarpeta sigue apareciendo ([#90](https://github.com/dbarretol/file-reporter/issues/90)).
+
 ## [0.7.0] - 2026-11-12
 
 ### Añadido
@@ -124,6 +130,7 @@ Primera versión pública.
 - Escaneo paralelo en una sola pasada; tolera carpetas sin permisos y enlaces cíclicos.
 - CSV protegido contra *formula injection*.
 
+[0.7.1]: https://github.com/dbarretol/file-reporter/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dbarretol/file-reporter/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dbarretol/file-reporter/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dbarretol/file-reporter/compare/v0.4.1...v0.5.0
