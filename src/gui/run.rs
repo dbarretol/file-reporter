@@ -86,8 +86,9 @@ impl App {
     }
 
     /// Hay un escaneo en curso o un diálogo de confirmación abierto: el
-    /// formulario queda inerte. El diálogo no es un modal real de egui, así
-    /// que sin esto se podría seguir editando "por debajo" de él.
+    /// formulario queda inerte. El diálogo de sobrescritura es un modal y ya
+    /// bloquea los clics, pero esto además atenúa los campos e ignora las
+    /// carpetas arrastradas y Enter mientras está abierto.
     pub(super) fn is_busy(&self) -> bool {
         self.is_running() || self.pending_confirm.is_some()
     }
