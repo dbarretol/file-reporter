@@ -310,7 +310,9 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     let reports = cfg.report_paths();
 
     // Excluir del escaneo los reportes de una corrida anterior (siempre, de
-    // los tres formatos: también los que esta corrida no genera) y, si la
+    // los tres formatos: también los que esta corrida no genera), sus
+    // temporales (`report.csv.tmp`…, que quedarían si un corte de luz
+    // interrumpe la escritura; ver `reporters::write_atomic`) y, si la
     // salida es una carpeta distinta de la entrada, la carpeta de salida
     // completa (por si contiene sobras de corridas previas). Cuando
     // output == input no se puede excluir la carpeta entera, solo los
@@ -318,6 +320,7 @@ pub fn run(cfg: &RunConfig, progress: Option<Arc<Progress>>) -> Result<RunSummar
     let mut excluded: Vec<PathBuf> = ReportFormat::ALL
         .iter()
         .map(|f| cfg.output.join(f.file_name()))
+        .flat_map(|p| [reporters::temp_path(&p), p])
         .collect();
     if cfg.output != cfg.input {
         excluded.push(cfg.output.clone());
@@ -667,6 +670,31 @@ mod tests {
         assert_eq!(summary.ext_stats.len(), 1);
         assert_eq!(summary.ext_stats[0].extension, "rs");
         assert!(md.contains("| .rs | 1 | 1 B | 100.0 % |"));
+    }
+
+    #[test]
+    fn run_ignores_leftover_temp_reports() {
+        // Un `report.csv.tmp` que quedó de una corrida interrumpida no debe
+        // aparecer en el nuevo reporte, y el nuevo `report.csv` lo reemplaza.
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in");
+        fs::create_dir(&input).unwrap();
+        fs::write(input.join("a.txt"), "x").unwrap();
+        fs::write(input.join("report.csv.tmp"), "sobra").unwrap();
+
+        let cfg = RunConfig {
+            input: input.clone(),
+            output: input.clone(),
+            extensions: vec![],
+            dirs_only: false,
+            exclude_dirs: vec![],
+            formats: vec![ReportFormat::Csv],
+        };
+        let summary = run(&cfg, None).unwrap();
+        assert_eq!(summary.files_count, 1);
+        assert!(!input.join("report.csv.tmp").exists());
+        let csv = fs::read_to_string(input.join("report.csv")).unwrap();
+        assert!(!csv.contains("report.csv"));
     }
 
     #[test]

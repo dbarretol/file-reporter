@@ -1,7 +1,7 @@
 use crate::models::{ExtStat, Node};
 use crate::runner::{format_percent, format_size};
 use anyhow::{Context, Result};
-use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 /// Escribe el árbol de directorios y, si hay archivos, una tabla con los
@@ -27,9 +27,12 @@ pub fn write_markdown(root: &Node, stats: &[ExtStat], output: &Path) -> Result<(
     buf.push_str(&fence);
     buf.push('\n');
     render_stats(stats, &mut buf);
-    fs::write(output, buf)
-        .with_context(|| format!("No se pudo escribir Markdown en {}", output.display()))?;
-    Ok(())
+    // A través de un temporal: un fallo no deja el reporte anterior vacío
+    // (ver `reporters::write_atomic`).
+    super::write_atomic(output, "Markdown", |w| {
+        w.write_all(buf.as_bytes())
+            .with_context(|| format!("No se pudo escribir Markdown en {}", output.display()))
+    })
 }
 
 /// Delimitador del bloque de código del árbol: tres acentos graves o, si el
