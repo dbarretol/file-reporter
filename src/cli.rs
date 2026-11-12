@@ -2,6 +2,7 @@ use crate::runner::{self, Progress, ReportFormat, RunConfig, RunSummary};
 use anyhow::Result;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
@@ -43,6 +44,12 @@ pub struct Cli {
     /// Reportes a generar (ej: -f csv,md). Si no se pasa, se generan los tres.
     #[arg(short = 'f', long = "format", value_enum, value_delimiter = ',')]
     pub formats: Vec<ReportFormat>,
+
+    /// Mostrar qué se omitió y por qué: carpetas y archivos sin acceso,
+    /// enlaces no seguidos y carpetas excluidas por nombre. Con -vv, también
+    /// el detalle interno del proceso.
+    #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count)]
+    pub verbose: u8,
 }
 
 impl Cli {
@@ -79,6 +86,25 @@ impl Cli {
     }
 }
 
+/// Activa el registro detallado en stderr según el número de `-v`: nada sin
+/// `-v` (la salida normal ya resume lo importante), avisos e información con
+/// `-v` y además depuración con `-vv`.
+pub fn init_logging(verbose: u8) {
+    let level = match verbose {
+        0 => return,
+        1 => tracing::Level::INFO,
+        _ => tracing::Level::DEBUG,
+    };
+    tracing_subscriber::fmt()
+        .with_max_level(level)
+        .with_writer(std::io::stderr)
+        // Sin colores si stderr va a un archivo, para no ensuciarlo.
+        .with_ansi(std::io::stderr().is_terminal())
+        .with_target(false)
+        .without_time()
+        .init();
+}
+
 /// Cada cuánto se refresca el spinner (giro y contador).
 const SPINNER_TICK: Duration = Duration::from_millis(100);
 
@@ -86,11 +112,12 @@ const SPINNER_TICK: Duration = Duration::from_millis(100);
 /// elementos encontrados y el tiempo transcurrido, y después la fase de
 /// escritura de reportes. Usa el mismo `runner::Progress` que la GUI.
 ///
-/// Si stderr no es una terminal (salida redirigida, CI…) `indicatif` no
-/// dibuja nada y la ejecución es igual que sin spinner.
-pub fn run_with_progress(cfg: &RunConfig) -> Result<RunSummary> {
+/// Sin spinner si `show` es `false` (con `-v`, para que no se mezcle con las
+/// líneas del registro, que también van a stderr) o si stderr no es una
+/// terminal (salida redirigida, CI…): entonces la ejecución es la normal.
+pub fn run_with_progress(cfg: &RunConfig, show: bool) -> Result<RunSummary> {
     let bar = ProgressBar::new_spinner();
-    if bar.is_hidden() {
+    if !show || bar.is_hidden() {
         return runner::run(cfg, None);
     }
     bar.set_style(
@@ -162,6 +189,7 @@ mod tests {
             exclude: vec![],
             exclude_common: false,
             formats: vec![],
+            verbose: 0,
         }
     }
 
@@ -225,6 +253,19 @@ mod tests {
         let dirs = cli.excluded_dirs();
         assert_eq!(dirs.len(), crate::runner::COMMON_EXCLUDED_DIRS.len() + 1);
         assert_eq!(dirs.last().map(String::as_str), Some("out"));
+    }
+
+    #[test]
+    fn verbose_counts_repetitions() {
+        let verbose = |args: &[&str]| {
+            Cli::try_parse_from(["file-reporter", "."].iter().chain(args))
+                .unwrap()
+                .verbose
+        };
+        assert_eq!(verbose(&[]), 0);
+        assert_eq!(verbose(&["-v"]), 1);
+        assert_eq!(verbose(&["-vv"]), 2);
+        assert_eq!(verbose(&["--verbose", "-v"]), 2);
     }
 
     #[test]
