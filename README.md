@@ -10,7 +10,7 @@
 File Reporter es una herramienta escrita en Rust que se usa con **interfaz gráfica** (para el día a día) o desde la **línea de comandos** (para scripts y automatización). Recorre la carpeta en paralelo y genera hasta tres reportes con la estructura de carpetas y los datos de cada archivo: tamaño, fechas y ruta.
 
 <p align="center">
-  <img src="docs/images/gui-resultado.png" alt="Ventana de resultado de File Reporter: tres reportes generados, siete archivos, dos carpetas omitidas por nombre y una tabla de tipos de archivo con barras de porcentaje" width="760">
+  <img src="docs/images/gui-resultado.png" alt="Ventana de resultado de File Reporter: siete archivos, dos carpetas omitidas por nombre, la carpeta donde se guardaron los tres reportes con botones para abrirlos y una tabla de tipos de archivo con barras de porcentaje" width="760">
 </p>
 
 ---
@@ -75,7 +75,7 @@ file-reporter /ruta/a/escanear
 - 🧭 Formulario simple: lo esencial arriba y el resto en **Opciones**, con un resumen de lo elegido.
 - 📈 Progreso en vivo (archivos encontrados y carpetas revisadas); **cancela** en cualquier momento con Esc.
 - 🧾 Resultado claro: reportes (abrir o copiar su ruta), tipos de archivo y lo que quedó fuera, con su motivo.
-- ⚠️ Antes de sobrescribir reportes anteriores, ofrece guardar los nuevos con otro nombre.
+- 🔄 Al volver a generar, ofrece actualizar los reportes anteriores o guardar los nuevos con otro nombre, o no volver a preguntar.
 - 🎨 Tema claro, oscuro o el del sistema; recuerda rutas y opciones entre sesiones.
 
 **Línea de comandos**
@@ -157,8 +157,8 @@ flowchart TD
     B --> C["▶ Generar reportes"]
     C --> D{"¿Ya hay reportes<br/>en la carpeta de salida?"}
     D -- "No" --> E["⏳ Escaneo con progreso en vivo<br/>Esc cancela"]
-    D -- "Sí" --> F{"Sobrescribir, guardar con<br/>otro nombre o cancelar"}
-    F -- "Sobrescribir u otro nombre" --> E
+    D -- "Sí" --> F{"Actualizar, guardar con<br/>otro nombre o cancelar"}
+    F -- "Actualizar u otro nombre" --> E
     F -- "Cancelar" --> A
     E --> G["✅ Resultado: reportes, tipos de archivo<br/>y lo que quedó fuera"]
 ```
@@ -169,8 +169,10 @@ flowchart TD
    - escribir las **extensiones** a incluir (las sugerencias se suman a lo escrito; pulsarlas otra vez las quita);
    - revisar las **carpetas a omitir** por nombre. De partida se omiten `.git`, `node_modules`, `target`, `__pycache__`, `.venv`, `dist` y `build`; vacía el campo para incluirlas;
    - marcar **Solo carpetas** para obtener solo la jerarquía de directorios;
-   - desmarcar los **formatos** que no necesites.
-4. Pulsa **▶ Generar reportes** (o Enter, si no estás escribiendo en un campo). Al terminar se abre la ventana de resultado. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
+   - desmarcar los **formatos** que no necesites;
+   - volver a activar **Preguntar antes de reemplazar reportes anteriores**, si elegiste "No volver a preguntar".
+4. Pulsa **▶ Generar reportes** (o Enter, si no estás escribiendo en un campo). Si en la carpeta de salida ya hay reportes de una ejecución anterior, puedes **actualizarlos** (se reemplazan) o **guardar los nuevos con otro nombre** (`report-<carpeta>-<fecha>.*`).
+5. Al terminar se abre la ventana de resultado, con la carpeta donde se guardaron los reportes, un botón para abrir cada uno y los tipos de archivo. Ciérrala con **Cerrar**, Enter o Esc; el botón **Ver resultado** la vuelve a abrir.
 
 <p align="center">
   <img src="docs/images/gui-opciones.png" alt="Formulario de File Reporter con la carpeta a escanear, la carpeta de salida y Opciones desplegado: extensiones, carpetas a omitir, solo carpetas y formatos" width="760">
@@ -253,7 +255,7 @@ Mientras escanea, la terminal muestra cuántos archivos lleva encontrados, cuán
 
 ## 📁 Reportes generados
 
-Cada ejecución crea en la carpeta de salida los reportes elegidos (los tres por defecto). Se llaman `report.*` salvo que se elija otro nombre con `-n` o, en la GUI, con "Guardar con otro nombre" al ir a sobrescribir.
+Cada ejecución crea en la carpeta de salida los reportes elegidos (los tres por defecto). Se llaman `report.*` salvo que se elija otro nombre con `-n` o, en la GUI, con "Guardar con otro nombre" al volver a generar.
 
 | Archivo | Contenido | Ideal para |
 |---|---|---|

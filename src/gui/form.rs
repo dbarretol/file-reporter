@@ -413,6 +413,17 @@ impl App {
                     ui.add_enabled(enabled, egui::Checkbox::new(on, format.label()));
                 }
             });
+            ui.add_enabled(
+                enabled,
+                egui::Checkbox::new(
+                    &mut self.ask_before_overwrite,
+                    "Preguntar antes de reemplazar reportes anteriores",
+                ),
+            )
+            .on_hover_text(
+                "Si ya hay reportes con el mismo nombre en la carpeta de salida, \
+                 ofrece actualizarlos o guardar los nuevos con otro nombre.",
+            );
         });
     }
 

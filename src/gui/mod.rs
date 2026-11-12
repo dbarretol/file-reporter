@@ -157,6 +157,13 @@ struct App {
 
     /// Si "Opciones" ya se forzó plegado al arrancar (ver `render_options`).
     options_initialized: bool,
+
+    /// Si se pide confirmación antes de reemplazar reportes existentes. Se
+    /// desactiva con "No volver a preguntar" y se reactiva en Opciones.
+    ask_before_overwrite: bool,
+    /// Casilla "No volver a preguntar" del diálogo abierto (solo se aplica
+    /// al pulsar "Actualizar reportes").
+    dont_ask_checked: bool,
 }
 
 /// Qué se copió desde el modal de resultado.
@@ -192,6 +199,9 @@ struct PersistedState {
     /// Últimas carpetas escaneadas (vacío en estados de versiones
     /// anteriores).
     recent_inputs: Vec<String>,
+    /// Preguntar antes de reemplazar reportes (sí, en estados de versiones
+    /// anteriores).
+    ask_before_overwrite: bool,
 }
 
 impl Default for PersistedState {
@@ -205,6 +215,7 @@ impl Default for PersistedState {
             formats: ALL_FORMATS,
             theme: ThemeChoice::System,
             recent_inputs: Vec::new(),
+            ask_before_overwrite: true,
         }
     }
 }
@@ -225,6 +236,7 @@ impl App {
             formats: state.formats,
             theme: state.theme,
             recent_inputs: state.recent_inputs,
+            ask_before_overwrite: state.ask_before_overwrite,
             ..App::default()
         }
     }
@@ -326,7 +338,7 @@ impl App {
                     ui.add_space(16.0);
                     ui.vertical(|ui| {
                         ui.label(
-                            egui::RichText::new("📋  File Reporter")
+                            egui::RichText::new("File Reporter")
                                 .size(20.0)
                                 .strong(),
                         );
@@ -521,6 +533,7 @@ impl eframe::App for App {
             formats: self.formats,
             theme: self.theme,
             recent_inputs: self.recent_inputs.clone(),
+            ask_before_overwrite: self.ask_before_overwrite,
         };
         eframe::set_value(storage, PERSIST_KEY, &state);
     }
@@ -543,6 +556,7 @@ mod tests {
         assert_eq!(state.theme, ThemeChoice::System);
         assert_eq!(state.input_path, "C:\\x");
         assert!(state.recent_inputs.is_empty());
+        assert!(state.ask_before_overwrite);
     }
 
     #[test]
