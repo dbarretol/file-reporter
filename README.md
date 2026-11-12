@@ -85,8 +85,8 @@ C:\Demo\Proyecto
 - 📊 Resultado en una ventana propia: archivos, tamaño total, tiempo y tipos de archivo; abre o copia la ruta de cada reporte.
 - 🔔 Si la ventana está en segundo plano, parpadea en la barra de tareas al terminar.
 - ⚠️ Pide confirmación antes de sobrescribir reportes anteriores.
-- ♻️ Recuerda rutas y opciones entre sesiones.
-- 🎨 Tema claro u oscuro según el sistema operativo.
+- ♻️ Recuerda rutas, opciones y tema entre sesiones.
+- 🎨 Tema claro, oscuro o el del sistema operativo, a elegir en la cabecera.
 
 ---
 
@@ -366,7 +366,6 @@ Cada push a `main` o `dev` y cada pull request pasan por [GitHub Actions](.githu
 
 ## 🧭 Hoja de ruta
 
-- [ ] Selector manual de tema claro/oscuro ([#11](https://github.com/dbarretol/file-reporter/issues/11)).
 - [ ] Icono propio para el ejecutable y la ventana ([#6](https://github.com/dbarretol/file-reporter/issues/6)).
 - [ ] Binarios precompilados en *Releases* e instalador `.msi` ([#15](https://github.com/dbarretol/file-reporter/issues/15)).
 - [ ] Barra de progreso en la línea de comandos ([#7](https://github.com/dbarretol/file-reporter/issues/7)).
